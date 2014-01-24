@@ -45,7 +45,7 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %}
 
 %pure_parser
-%expect 3
+%expect 4
 
 %code requires {
 #ifdef ZTS
@@ -414,13 +414,16 @@ unticked_function_declaration_statement:
 ;
 
 unticked_class_declaration_statement:
-		class_entry_type T_STRING extends_from
-			{ zend_do_begin_class_declaration(&$1, &$2, &$3 TSRMLS_CC); }
+		class_entry_type T_STRING { zend_do_begin_pre_class_declaration(TSRMLS_C); }
+			generic_aliases_list
+			extends_from
+			{ zend_do_begin_class_declaration(&$1, &$2, &$5 TSRMLS_CC); }
 			implements_list
 			'{'
 				class_statement_list
-			'}' { zend_do_end_class_declaration(&$1, &$3 TSRMLS_CC); }
-	|	interface_entry T_STRING
+			'}' { zend_do_end_class_declaration(&$1, &$5 TSRMLS_CC); }
+	|	interface_entry T_STRING { zend_do_begin_pre_class_declaration(TSRMLS_C); }
+			generic_aliases_list
 			{ zend_do_begin_class_declaration(&$1, &$2, NULL TSRMLS_CC); }
 			interface_extends_list
 			'{'
@@ -438,7 +441,8 @@ class_entry_type:
 
 extends_from:
 		/* empty */					{ $$.op_type = IS_UNUSED; }
-	|	T_EXTENDS fully_qualified_class_name	{ zend_do_fetch_class(&$$, &$2 TSRMLS_CC); }
+	|	T_EXTENDS fully_qualified_class_name
+			generic_extends_aliases_list	{ zend_do_fetch_class(&$$, &$2 TSRMLS_CC); }
 ;
 
 interface_entry:
@@ -458,6 +462,26 @@ implements_list:
 interface_list:
 		fully_qualified_class_name			{ zend_do_implements_interface(&$1 TSRMLS_CC); }
 	|	interface_list ',' fully_qualified_class_name { zend_do_implements_interface(&$3 TSRMLS_CC); }
+;
+
+generic_aliases_list:
+		'<' generic_aliases '>'
+	|	/* empty */
+;
+
+generic_aliases:
+		T_STRING						{ zend_do_add_generic_alias(&$1 TSRMLS_CC); }
+	|	generic_aliases ',' T_STRING	{ zend_do_add_generic_alias(&$3 TSRMLS_CC); }
+;
+
+generic_extends_aliases_list:
+		'<' generic_extends_aliases '>'
+	|	/* empty */
+;
+
+generic_extends_aliases:
+		fully_qualified_class_name								{ zend_do_alias_generic_alias(&$1 TSRMLS_CC); }
+	|	generic_extends_aliases ',' fully_qualified_class_name	{ zend_do_alias_generic_alias(&$3 TSRMLS_CC); }
 ;
 
 foreach_optional_arg:
@@ -764,7 +788,17 @@ instance_call:
 ;
 
 new_expr:
-		T_NEW class_name_reference { zend_do_extended_fcall_begin(TSRMLS_C); zend_do_begin_new_object(&$1, &$2 TSRMLS_CC); } ctor_arguments { zend_do_end_new_object(&$$, &$1, &$4 TSRMLS_CC); zend_do_extended_fcall_end(TSRMLS_C);}
+		T_NEW class_name_reference generic_classes_list { zend_do_extended_fcall_begin(TSRMLS_C); zend_do_begin_new_object(&$1, &$2 TSRMLS_CC); } ctor_arguments { zend_do_end_new_object(&$$, &$1, &$5 TSRMLS_CC); zend_do_extended_fcall_end(TSRMLS_C);}
+;
+
+generic_classes_list:
+		/* empty */
+	|	'<' generic_classes '>'
+;
+
+generic_classes:
+		fully_qualified_class_name
+	|	generic_classes ',' fully_qualified_class_name
 ;
 
 expr_without_variable:

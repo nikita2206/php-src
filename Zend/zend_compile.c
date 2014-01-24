@@ -1850,6 +1850,8 @@ void zend_do_receive_param(zend_uchar op, znode *varname, const znode *initializ
 	zend_op *opline;
 	zend_arg_info *cur_arg_info;
 	znode var;
+	int i = 0;
+	int generic_alias_found = 0;
 
 	if (zend_is_auto_global(Z_STRVAL(varname->u.constant), Z_STRLEN(varname->u.constant) TSRMLS_CC)) {
 		zend_error_noreturn(E_COMPILE_ERROR, "Cannot re-assign auto-global variable %s", Z_STRVAL(varname->u.constant));
@@ -1930,13 +1932,34 @@ void zend_do_receive_param(zend_uchar op, znode *varname, const znode *initializ
 					}
 				}
 			} else {
-				cur_arg_info->type_hint = IS_OBJECT;
-				if (ZEND_FETCH_CLASS_DEFAULT == zend_get_class_fetch_type(Z_STRVAL(class_type->u.constant), Z_STRLEN(class_type->u.constant))) {
-					zend_resolve_class_name(class_type TSRMLS_CC);
+				if (CG(active_class_entry)) {
+					for (i = 0; i < CG(active_class_entry)->num_generics; ++i) {
+						if (CG(active_class_entry)->generic_aliases[i]->name_len == Z_STRLEN(class_type->u.constant) &&
+								0 == strcmp(CG(active_class_entry)->generic_aliases[i]->name, Z_STRVAL(class_type->u.constant))) {
+							generic_alias_found = 1;
+							break;
+						}
+					}
 				}
-				Z_STRVAL(class_type->u.constant) = (char*)zend_new_interned_string(Z_STRVAL(class_type->u.constant), Z_STRLEN(class_type->u.constant) + 1, 1 TSRMLS_CC);
-				cur_arg_info->class_name = Z_STRVAL(class_type->u.constant);
-				cur_arg_info->class_name_len = Z_STRLEN(class_type->u.constant);
+
+				if (generic_alias_found) {
+					if (CG(active_op_array)->fn_flags & ZEND_ACC_STATIC > 0) {
+						zend_error_noreturn(E_COMPILE_ERROR, "Static function can't use generic types");
+					}
+
+					cur_arg_info->type_hint = IS_GENERIC_ALIAS;
+					cur_arg_info->generic_type = CG(active_class_entry)->generic_aliases[i];
+				} else {
+					cur_arg_info->type_hint = IS_OBJECT;
+					if (ZEND_FETCH_CLASS_DEFAULT == zend_get_class_fetch_type(Z_STRVAL(class_type->u.constant), Z_STRLEN(class_type->u.constant))) {
+						zend_resolve_class_name(class_type TSRMLS_CC);
+					}
+
+					Z_STRVAL(class_type->u.constant) = (char*)zend_new_interned_string(Z_STRVAL(class_type->u.constant), Z_STRLEN(class_type->u.constant) + 1, 1 TSRMLS_CC);
+					cur_arg_info->class_name = Z_STRVAL(class_type->u.constant);
+					cur_arg_info->class_name_len = Z_STRLEN(class_type->u.constant);
+				}
+
 				if (op == ZEND_RECV_INIT) {
 					if (Z_TYPE(initialization->u.constant) == IS_NULL || (Z_TYPE(initialization->u.constant) == IS_CONSTANT && !strcasecmp(Z_STRVAL(initialization->u.constant), "NULL")) || Z_TYPE(initialization->u.constant) == IS_CONSTANT_AST) {
 						cur_arg_info->allow_null = 1;
@@ -2302,7 +2325,7 @@ void zend_do_fetch_class(znode *result, znode *class_name TSRMLS_DC) /* {{{ */
 {
 	long fetch_class_op_number;
 	zend_op *opline;
-
+	
 	fetch_class_op_number = get_next_op_number(CG(active_op_array));
 	opline = get_next_op(CG(active_op_array) TSRMLS_CC);
 
@@ -3781,6 +3804,48 @@ ZEND_API void zend_do_inheritance(zend_class_entry *ce, zend_class_entry *parent
 		zend_verify_abstract_class(ce TSRMLS_CC);
 	}
 	ce->ce_flags |= parent_ce->ce_flags & ZEND_HAS_STATIC_IN_METHODS;
+
+	if (parent_ce->num_generics > 0) {
+		if (ce->num_parent_generics == 0) {
+			ce->num_parent_generics = parent_ce->num_generics;
+			ce->parent_generic_aliases_pass = parent_ce->generic_aliases;
+			ce->num_generics = parent_ce->num_generics;
+			ce->generic_aliases = parent_ce->generic_aliases;
+		} else if (ce->num_parent_generics != parent_ce->num_generics) {
+			zend_error_noreturn(E_COMPILE_ERROR, "Class %s accepts exactly %d type variables, %d given in the declaration of derived class %s",
+					parent_ce->name, parent_ce->num_generics, ce->num_parent_generics, ce->name);
+		}
+
+		if (ce->num_generics > 0) {
+			Bucket *p = ce->function_table.pListHead;
+			zend_function *function;
+			int i, k;
+
+			while (p) {
+				function = (zend_function*) p->pData;
+				if (function->type == ZEND_USER_FUNCTION && function->common.scope != ce) {
+					for (i = 0; i < function->common.num_args; i++) {
+						if (function->common.arg_info[i].type_hint == IS_GENERIC_ALIAS) {
+							for (k = 0; k < parent_ce->num_generics; k++) {
+								if (parent_ce->generic_aliases[k] == function->common.arg_info[i].generic_type) {
+									if (ce->parent_generic_aliases_pass[k]->is_resolved_class == 1) {
+										function->common.arg_info[i].type_hint = IS_OBJECT;
+										function->common.arg_info[i].class_name = ce->parent_generic_aliases_pass[k]->name;
+										function->common.arg_info[i].class_name_len = ce->parent_generic_aliases_pass[k]->name_len;
+										function->common.arg_info[i].generic_type = NULL;
+									} else {
+										function->common.arg_info[i].generic_type = ce->parent_generic_aliases_pass[k];
+									}
+								}
+							}
+						}
+					}
+				}
+
+				p = p->pListNext;
+			}
+		}
+	}
 }
 /* }}} */
 
@@ -5010,19 +5075,29 @@ void zend_do_default_before_statement(const znode *case_list, znode *default_tok
 }
 /* }}} */
 
-void zend_do_begin_class_declaration(const znode *class_token, znode *class_name, const znode *parent_class_name TSRMLS_DC) /* {{{ */
+void zend_do_begin_pre_class_declaration(TSRMLS_D) /* {{{ */
 {
-	zend_op *opline;
-	int doing_inheritance = 0;
-	zend_class_entry *new_class_entry;
-	char *lcname;
-	int error = 0;
-	zval **ns_name, key;
-
 	if (CG(active_class_entry)) {
 		zend_error_noreturn(E_COMPILE_ERROR, "Class declarations may not be nested");
 		return;
 	}
+	
+	CG(active_class_entry) = (zend_class_entry*) emalloc(sizeof(zend_class_entry));
+	CG(active_class_entry)->num_generics = 0;
+	CG(active_class_entry)->generic_aliases = NULL;
+	CG(active_class_entry)->num_parent_generics = 0;
+	CG(active_class_entry)->parent_generic_aliases_pass = NULL;
+}
+/* }}} */
+
+void zend_do_begin_class_declaration(const znode *class_token, znode *class_name, const znode *parent_class_name TSRMLS_DC) /* {{{ */
+{
+	zend_op *opline;
+	int doing_inheritance = 0;
+	zend_class_entry *new_class_entry = CG(active_class_entry);
+	char *lcname;
+	int error = 0;
+	zval **ns_name, key;
 
 	lcname = zend_str_tolower_dup(Z_STRVAL(class_name->u.constant), Z_STRLEN(class_name->u.constant));
 
@@ -5055,12 +5130,13 @@ void zend_do_begin_class_declaration(const znode *class_token, znode *class_name
 
 		if (Z_STRLEN_PP(ns_name) != Z_STRLEN(class_name->u.constant) ||
 			memcmp(tmp, lcname, Z_STRLEN(class_name->u.constant))) {
+			efree(CG(active_class_entry));
+			CG(active_class_entry) = NULL;
 			zend_error_noreturn(E_COMPILE_ERROR, "Cannot declare class %s because the name is already in use", Z_STRVAL(class_name->u.constant));
 		}
 		efree(tmp);
 	}
 
-	new_class_entry = emalloc(sizeof(zend_class_entry));
 	new_class_entry->type = ZEND_USER_CLASS;
 	new_class_entry->name = zend_new_interned_string(Z_STRVAL(class_name->u.constant), Z_STRLEN(class_name->u.constant) + 1, 1 TSRMLS_CC);
 	new_class_entry->name_length = Z_STRLEN(class_name->u.constant);
@@ -5227,6 +5303,87 @@ void zend_do_implements_interface(znode *interface_name TSRMLS_DC) /* {{{ */
 	opline->op2_type = IS_CONST;
 	opline->op2.constant = zend_add_class_name_literal(CG(active_op_array), &interface_name->u.constant TSRMLS_CC);
 	CG(active_class_entry)->num_interfaces++;
+}
+/* }}} */
+
+void zend_do_add_generic_alias(znode *alias_name TSRMLS_DC) /* {{{ */
+{
+	int i = 0;
+	int generic_alias_found = 0;
+	zend_class_entry *ce = CG(active_class_entry);
+
+	switch (zend_get_class_fetch_type(Z_STRVAL(alias_name->u.constant), Z_STRLEN(alias_name->u.constant))) {
+		case ZEND_FETCH_CLASS_SELF:
+		case ZEND_FETCH_CLASS_PARENT:
+		case ZEND_FETCH_CLASS_STATIC:
+			zend_error_noreturn(E_COMPILE_ERROR, "Cannot use '%s' as a generic type as it is reserved", Z_STRVAL(alias_name->u.constant));
+			break;
+		default:
+			break;
+	}
+
+	for (; i < ce->num_generics; i++) {
+		if (ce->generic_aliases[i]->name_len == Z_STRLEN(alias_name->u.constant) &&
+			strcmp(ce->generic_aliases[i]->name, Z_STRVAL(alias_name->u.constant)) == 0) {
+			generic_alias_found = 1;
+		}
+	}
+
+	if (generic_alias_found) {
+		zend_error_noreturn(E_COMPILE_ERROR, "Cannot use '%s' as a generic type as this class already has the same generic type",
+				Z_STRVAL(alias_name->u.constant));
+	}
+
+	ce->num_generics++;
+	if (!ce->generic_aliases) {
+		ce->generic_aliases = (zend_generic_alias**) emalloc(sizeof(zend_generic_alias*));
+	} else {
+		ce->generic_aliases = (zend_generic_alias**) erealloc(ce->generic_aliases, ce->num_generics * sizeof(zend_generic_alias*));
+	}
+
+	ce->generic_aliases[ce->num_generics-1] = (zend_generic_alias*) emalloc(sizeof(zend_generic_alias));
+	ce->generic_aliases[ce->num_generics-1]->name = zend_new_interned_string(Z_STRVAL(alias_name->u.constant), Z_STRLEN(alias_name->u.constant)+1, 0 TSRMLS_CC);
+	ce->generic_aliases[ce->num_generics-1]->name_len = Z_STRLEN(alias_name->u.constant);
+	ce->generic_aliases[ce->num_generics-1]->is_resolved_class = 0;
+}
+/* }}}*/
+
+void zend_do_alias_generic_alias(znode *alias_name TSRMLS_DC) /* {{{ */
+{
+	int i;
+	zend_class_entry *ce = CG(active_class_entry);
+	zend_generic_alias *alias;
+
+	switch (zend_get_class_fetch_type(Z_STRVAL(alias_name->u.constant), Z_STRLEN(alias_name->u.constant))) {
+		case ZEND_FETCH_CLASS_SELF:
+		case ZEND_FETCH_CLASS_PARENT:
+		case ZEND_FETCH_CLASS_STATIC:
+			zend_error_noreturn(E_COMPILE_ERROR, "Cannot use '%s' as a generic type alias as it is reserved", Z_STRVAL(alias_name->u.constant));
+			break;
+		default:
+			break;
+	}
+
+	ce->num_parent_generics++;
+	if (!ce->parent_generic_aliases_pass) {
+		ce->parent_generic_aliases_pass = (zend_generic_alias**) emalloc(sizeof(zend_generic_alias*));
+	} else {
+		ce->parent_generic_aliases_pass = (zend_generic_alias**) erealloc(ce->parent_generic_aliases_pass, ce->num_parent_generics * sizeof(zend_generic_alias*));
+	}
+
+	alias = ce->parent_generic_aliases_pass[ce->num_parent_generics-1] = (zend_generic_alias*) emalloc(sizeof(zend_generic_alias));
+	alias->name = zend_new_interned_string(Z_STRVAL(alias_name->u.constant), Z_STRLEN(alias_name->u.constant)+1, 0 TSRMLS_CC);
+	alias->name_len = Z_STRLEN(alias_name->u.constant);
+	alias->is_resolved_class = 1;
+
+	for (i = 0; i < ce->num_generics; ++i) {
+		if (ce->generic_aliases[i]->name_len == alias->name_len && (ce->generic_aliases[i]->name == alias->name ||
+				0 == strcmp(ce->generic_aliases[i]->name, alias->name))) {
+
+			alias->is_resolved_class = 0;
+			break;
+		}
+	}
 }
 /* }}} */
 

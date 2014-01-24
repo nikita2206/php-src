@@ -237,6 +237,7 @@ typedef struct _zend_arg_info {
 	zend_uint name_len;
 	const char *class_name;
 	zend_uint class_name_len;
+	zend_generic_alias* generic_type;
 	zend_uchar type_hint;
 	zend_uchar pass_by_reference;
 	zend_bool allow_null;
@@ -569,6 +570,8 @@ void zend_do_case_before_statement(const znode *case_list, znode *case_token, co
 void zend_do_case_after_statement(znode *result, const znode *case_token TSRMLS_DC);
 void zend_do_default_before_statement(const znode *case_list, znode *default_token TSRMLS_DC);
 
+void zend_do_add_generic_alias(znode *alias_name TSRMLS_DC);
+void zend_do_begin_pre_class_declaration(TSRMLS_D);
 void zend_do_begin_class_declaration(const znode *class_token, znode *class_name, const znode *parent_class_name TSRMLS_DC);
 void zend_do_end_class_declaration(const znode *class_token, const znode *parent_token TSRMLS_DC);
 void zend_do_declare_property(const znode *var_name, const znode *value, zend_uint access_type TSRMLS_DC);

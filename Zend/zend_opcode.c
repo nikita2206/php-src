@@ -217,6 +217,28 @@ ZEND_API int zend_cleanup_class_data(zend_class_entry **pce TSRMLS_DC)
 	return 0;
 }
 
+void _destroy_zend_class_generic_aliases(zend_class_entry *ce) {
+	int i;
+
+	if (ce->num_generics) {
+		for (i=0; i<ce->num_generics; i++) {
+			efree(ce->generic_aliases[i]);
+		}
+
+		efree(ce->generic_aliases);
+		ce->num_generics = 0;
+	}
+
+	if (ce->num_parent_generics) {
+		for (i=0; i<ce->num_parent_generics; i++) {
+			efree(ce->parent_generic_aliases_pass[i]);
+		}
+
+		efree(ce->parent_generic_aliases_pass);
+		ce->num_generics = 0;
+	}
+}
+
 void _destroy_zend_class_traits_info(zend_class_entry *ce)
 {
 	if (ce->num_traits > 0 && ce->traits) {
@@ -307,7 +329,7 @@ ZEND_API void destroy_zend_class(zend_class_entry **pce)
 			}
 			
 			_destroy_zend_class_traits_info(ce);
-			
+			_destroy_zend_class_generic_aliases(ce TSRMLS_CC);			
 			efree(ce);
 			break;
 		case ZEND_INTERNAL_CLASS:

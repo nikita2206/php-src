@@ -210,6 +210,10 @@ typedef struct _zend_fcall_info_cache {
 		class_container.interfaces = NULL;						\
 		class_container.get_iterator = NULL;					\
 		class_container.iterator_funcs.funcs = NULL;			\
+		class_container.generic_aliases = NULL;					\
+		class_container.num_generics = 0;						\
+		class_container.num_parent_generics = 0;				\
+		class_container.parent_generic_aliases_pass = NULL;		\
 		class_container.info.internal.module = NULL;			\
 		class_container.info.internal.builtin_functions = functions;	\
 	}

@@ -475,6 +475,14 @@ struct _zend_trait_alias {
 };
 typedef struct _zend_trait_alias zend_trait_alias;
 
+struct _zend_generic_alias {
+	zend_bool is_resolved_class;
+
+	const char *name;
+	unsigned int name_len;
+};
+typedef struct _zend_generic_alias zend_generic_alias;
+
 struct _zend_class_entry {
 	char type;
 	const char *name;
@@ -524,6 +532,11 @@ struct _zend_class_entry {
 	zend_uint num_traits;
 	zend_trait_alias **trait_aliases;
 	zend_trait_precedence **trait_precedences;
+	
+	zend_generic_alias **generic_aliases;
+	zend_uint num_generics;
+	zend_generic_alias **parent_generic_aliases_pass;
+	zend_uint num_parent_generics;
 
 	union {
 		struct {
@@ -591,6 +604,7 @@ typedef int (*zend_write_func_t)(const char *str, uint str_length);
 #define IS_CONSTANT_ARRAY	9
 #define IS_CONSTANT_AST		10
 #define IS_CALLABLE	11
+#define IS_GENERIC_ALIAS 12
 
 /* Ugly hack to support constants as static array indices */
 #define IS_CONSTANT_TYPE_MASK		0x00f
