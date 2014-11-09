@@ -264,6 +264,12 @@ typedef struct _zend_compiled_variable {
 	ulong hash_value;
 } zend_compiled_variable;
 
+typedef struct _zend_inlined_function {
+        /*                data,   this */
+	zval *(*callback)(void *, zval *);
+	void *data;
+} zend_inlined_function;
+
 struct _zend_op_array {
 	/* Common elements */
 	zend_uchar type;
@@ -315,6 +321,8 @@ struct _zend_op_array {
 	int  last_cache_slot;
 
 	void *reserved[ZEND_MAX_RESERVED_RESOURCES];
+
+	zend_inlined_function *inlined;
 };
 
 

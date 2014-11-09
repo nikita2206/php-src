@@ -1955,7 +1955,18 @@ ZEND_VM_HELPER(zend_do_fcall_common_helper, ANY, ANY)
 	}
 	LOAD_OPLINE();
 
-	if (fbc->type == ZEND_INTERNAL_FUNCTION) {
+	if (fbc->type == ZEND_USER_FUNCTION && fbc->op_array.inlined != NULL) {
+		zval *inlined_return = fbc->op_array.inlined->callback(fbc->op_array.inlined->data, EX(object));
+		temp_variable *ret = &EX_T(opline->result.var);
+
+		ret->var.ptr = inlined_return;
+		ret->var.ptr_ptr = &inlined_return;
+		ret->var.fcall_returned_reference = 0;
+
+		if (RETURN_VALUE_USED(opline)) {
+			Z_ADDREF_P(inlined_return);
+		}
+	} else if (fbc->type == ZEND_INTERNAL_FUNCTION) {
 		if (fbc->common.fn_flags & ZEND_ACC_HAS_TYPE_HINTS) {
 			zend_uint i;
 			void **p = EX(function_state).arguments - num_args;

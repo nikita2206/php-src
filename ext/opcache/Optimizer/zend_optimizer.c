@@ -404,6 +404,14 @@ static void replace_tmp_by_const(zend_op_array *op_array,
 	}
 }
 
+zval* zend_inline_callback_getter(void *data, zval *this TSRMLS_DC)
+{
+	zend_inline_data_getter getter_data = *(zend_inline_data_getter *) data;
+
+	return Z_OBJ_HT_P(this)->read_property(this, &getter_data.property_name->constant, BP_VAR_R, getter_data.property_name TSRMLS_CC);
+}
+
+
 #include "Optimizer/nop_removal.c"
 #include "Optimizer/block_pass.c"
 #include "Optimizer/optimize_temp_vars_5.c"
@@ -474,6 +482,19 @@ static void zend_optimize(zend_op_array           *op_array,
 		optimizer_compact_literals(op_array TSRMLS_CC);
 	}
 #endif
+
+	if (op_array->type == ZEND_USER_FUNCTION && op_array->function_name && op_array->scope && op_array->last >= 2) {
+		if (op_array->opcodes[0].opcode == ZEND_FETCH_OBJ_R && op_array->opcodes[1].opcode == ZEND_RETURN) {
+			op_array->inlined = (zend_inlined_function *) emalloc(sizeof(zend_inlined_function));
+			zend_inline_data_getter *data = (zend_inline_data_getter *) emalloc(sizeof(zend_inline_data_getter));
+			data->property_name = (zend_literal *) emalloc(sizeof(zend_literal));
+			memcpy((void *) data->property_name, (void *) &op_array->literals[op_array->opcodes[0].op2.constant], sizeof(zend_literal));
+			data->property_name->constant.value.str.val = (char *) emalloc(sizeof(char) * data->property_name->constant.value.str.len + 1);
+			memcpy((void *) data->property_name->constant.value.str.val, (void *) op_array->literals[op_array->opcodes[0].op2.constant].constant.value.str.val, 1 + sizeof(char) * data->property_name->constant.value.str.len);
+			op_array->inlined->callback = &zend_inline_callback_getter;
+			op_array->inlined->data = (void *) data;
+		}
+	}
 }
 
 static void zend_accel_optimize(zend_op_array           *op_array,

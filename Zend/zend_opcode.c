@@ -107,6 +107,8 @@ void init_op_array(zend_op_array *op_array, zend_uchar type, int initial_ops_siz
 	memset(op_array->reserved, 0, ZEND_MAX_RESERVED_RESOURCES * sizeof(void*));
 
 	zend_llist_apply_with_argument(&zend_extensions, (llist_apply_with_arg_func_t) zend_extension_op_array_ctor_handler, op_array TSRMLS_CC);
+
+	op_array->inlined = NULL;
 }
 
 ZEND_API void destroy_zend_function(zend_function *function TSRMLS_DC)
@@ -409,6 +411,13 @@ ZEND_API void destroy_op_array(zend_op_array *op_array TSRMLS_DC)
 			}
 		}
 		efree(op_array->arg_info);
+	}
+
+	if (op_array->inlined) {
+		if (op_array->inlined->data) {
+			efree(op_array->inlined->data);
+		}
+		efree(op_array->inlined);
 	}
 }
 

@@ -398,4 +398,8 @@ const char *accel_new_interned_string(const char *arKey, int nKeyLength, int fre
 # define ZEND_CE_DOC_COMMENT_LEN(ce)	(ce)->doc_comment_len
 #endif
 
+typedef struct _zend_inline_data_getter {
+	zend_literal *property_name;
+} zend_inline_data_getter;
+
 #endif /* ZEND_ACCELERATOR_H */
