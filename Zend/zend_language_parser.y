@@ -243,7 +243,7 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %type <ast> alt_if_stmt for_exprs switch_case_list global_var_list static_var_list
 %type <ast> echo_expr_list unset_variables catch_list parameter_list class_statement_list
 %type <ast> implements_list case_list if_stmt_without_else
-%type <ast> non_empty_parameter_list argument_list non_empty_argument_list property_list
+%type <ast> non_empty_parameter_list argument_list argument_list_curried non_empty_argument_list non_empty_curried_argument_list property_list
 %type <ast> class_const_list name_list trait_adaptations method_body non_empty_for_exprs
 %type <ast> ctor_arguments alt_if_stmt_without_else trait_adaptation_list lexical_vars
 %type <ast> lexical_var_list encaps_list array_pair_list non_empty_array_pair_list
@@ -588,11 +588,22 @@ argument_list:
 	|	'(' non_empty_argument_list ')' { $$ = $2; }
 ;
 
+argument_list_curried:
+		'(' ')' { $$ = zend_ast_create_list(0, ZEND_AST_ARG_LIST); }
+	|	'(' non_empty_curried_argument_list ')' { $$ = $2; }
+;
+
 non_empty_argument_list:
 		argument
 			{ $$ = zend_ast_create_list(1, ZEND_AST_ARG_LIST, $1); }
 	|	non_empty_argument_list ',' argument
 			{ $$ = zend_ast_list_add($1, $3); }
+;
+
+non_empty_curried_argument_list:
+		non_empty_argument_list ',' T_ELLIPSIS
+			{ ((zend_ast_list *) $1)->kind = ZEND_AST_ARG_CURRIED_LIST; $$ = $1; }
+	|	non_empty_argument_list { $$ = $1; }
 ;
 
 argument:
@@ -913,13 +924,13 @@ lexical_var:
 ;
 
 function_call:
-		name argument_list
+		name argument_list_curried
 			{ $$ = zend_ast_create(ZEND_AST_CALL, $1, $2); }
-	|	class_name T_PAAMAYIM_NEKUDOTAYIM member_name argument_list
+	|	class_name T_PAAMAYIM_NEKUDOTAYIM member_name argument_list_curried
 			{ $$ = zend_ast_create(ZEND_AST_STATIC_CALL, $1, $3, $4); }
-	|	variable_class_name T_PAAMAYIM_NEKUDOTAYIM member_name argument_list
+	|	variable_class_name T_PAAMAYIM_NEKUDOTAYIM member_name argument_list_curried
 			{ $$ = zend_ast_create(ZEND_AST_STATIC_CALL, $1, $3, $4); }
-	|	callable_expr argument_list
+	|	callable_expr argument_list_curried
 			{ $$ = zend_ast_create(ZEND_AST_CALL, $1, $2); }
 ;
 
@@ -1029,7 +1040,7 @@ callable_variable:
 			{ $$ = zend_ast_create(ZEND_AST_DIM, $1, $3); }
 	|	dereferencable '{' expr '}'
 			{ $$ = zend_ast_create(ZEND_AST_DIM, $1, $3); }
-	|	dereferencable T_OBJECT_OPERATOR member_name argument_list
+	|	dereferencable T_OBJECT_OPERATOR member_name argument_list_curried
 			{ $$ = zend_ast_create(ZEND_AST_METHOD_CALL, $1, $3, $4); }
 	|	function_call { $$ = $1; }
 ;

@@ -420,6 +420,7 @@ struct _zend_execute_data {
 	zend_class_entry    *called_scope;
 	zend_execute_data   *prev_execute_data;
 	zend_array          *symbol_table;
+	zval		    *applied_args;
 };
 
 #define ZEND_CALL_FUNCTION           (0 << 0)

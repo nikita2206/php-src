@@ -39,6 +39,7 @@ typedef struct _zend_closure {
 	zend_function  func;
 	zval           this_ptr;
 	HashTable     *debug_info;
+	zval	      *applied_args;
 } zend_closure;
 
 /* non-static since it needs to be referenced */

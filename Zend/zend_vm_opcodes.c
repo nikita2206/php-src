@@ -192,6 +192,7 @@ const char *zend_vm_opcodes_map[170] = {
 	"ZEND_ASSIGN_POW",
 	"ZEND_BIND_GLOBAL",
 	"ZEND_COALESCE",
+	"ZEND_CURRY",
 };
 
 ZEND_API const char* zend_get_opcode_name(zend_uchar opcode) {

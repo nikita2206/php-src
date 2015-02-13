@@ -2522,7 +2522,7 @@ ZEND_VM_HANDLER(59, ZEND_INIT_FCALL_BY_NAME, ANY, CONST|TMPVAR|CV)
 {
 	USE_OPLINE
 	zend_function *fbc;
-	zval *function_name, *func;
+	zval *function_name, *func, *applied_args;
 
 	if (OP2_TYPE == IS_CONST && Z_TYPE_P(EX_CONSTANT(opline->op2)) == IS_STRING) {
 		function_name = (zval*)(EX_CONSTANT(opline->op2)+1);
@@ -2571,6 +2571,9 @@ ZEND_VM_C_LABEL(try_function_name):
 		    EXPECTED(Z_TYPE_P(function_name) == IS_OBJECT) &&
 			Z_OBJ_HANDLER_P(function_name, get_closure) &&
 			Z_OBJ_HANDLER_P(function_name, get_closure)(function_name, &called_scope, &fbc, &object) == SUCCESS) {
+			zend_closure *closure;
+
+			applied_args = ((zend_closure *)Z_OBJ_P(obj))->applied_args;
 			if (object) {
 				GC_REFCOUNT(object)++;
 			}
@@ -2773,6 +2776,26 @@ ZEND_VM_HANDLER(61, ZEND_INIT_FCALL, ANY, CONST)
 	FREE_OP2();
 
 	ZEND_VM_NEXT_OPCODE();
+}
+
+ZEND_VM_HANDLER(170, ZEND_DO_CURRY, ANY, ANY)
+{
+	USE_OPLINE
+	zend_execute_data *call = EX(call);
+	zend_function *fbc = call->func;
+	zend_object *object = Z_OBJ(call->This);
+	zval *ret;
+
+	EX(call) = call->prev_execute_data;
+
+	if (EXPECTED(RETURN_VALUE_USED(opline))) {
+		ret = EX_VAR(opline->result.var);
+		zend_create_closure(ret, fbc, call->called_scope, call->This);
+	} else {
+		zend_vm_stack_free_args(call);
+	}
+
+	zend_vm_stack_free_call_frame(call);
 }
 
 ZEND_VM_HANDLER(60, ZEND_DO_FCALL, ANY, ANY)
