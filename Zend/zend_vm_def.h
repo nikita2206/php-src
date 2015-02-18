@@ -2523,6 +2523,7 @@ ZEND_VM_HANDLER(59, ZEND_INIT_FCALL_BY_NAME, ANY, CONST|TMPVAR|CV)
 	USE_OPLINE
 	zend_function *fbc;
 	zval *function_name, *func, *applied_args;
+	uint32_t num_applied_args = 0;
 
 	if (OP2_TYPE == IS_CONST && Z_TYPE_P(EX_CONSTANT(opline->op2)) == IS_STRING) {
 		function_name = (zval*)(EX_CONSTANT(opline->op2)+1);
@@ -2571,7 +2572,6 @@ ZEND_VM_C_LABEL(try_function_name):
 		    EXPECTED(Z_TYPE_P(function_name) == IS_OBJECT) &&
 			Z_OBJ_HANDLER_P(function_name, get_closure) &&
 			Z_OBJ_HANDLER_P(function_name, get_closure)(function_name, &called_scope, &fbc, &object) == SUCCESS) {
-			zend_closure *closure;
 
 			applied_args = ((zend_closure *)Z_OBJ_P(obj))->applied_args;
 			if (object) {
@@ -2659,8 +2659,19 @@ ZEND_VM_C_LABEL(try_function_name):
 			zend_error_noreturn(E_ERROR, "Function name must be a string");
 			ZEND_VM_CONTINUE(); /* Never reached */
 		}
-		EX(call) = zend_vm_stack_push_call_frame(ZEND_CALL_NESTED_FUNCTION,
-			fbc, opline->extended_value, called_scope, object, EX(call));
+
+		if (UNEXPECTED(applied_args != NULL)) {
+			zval *cur_arg = applied_args;
+			do {
+				++num_applied_args;
+			} while (++cur_arg != NULL);
+
+			EX(call) = zend_vm_stack_push_call_frame_applied_args(ZEND_CALL_NESTED_FUNCTION,
+				fbc, opline->extended_value, called_scope, object, EX(call), num_applied_args, applied_args);
+		} else {
+			EX(call) = zend_vm_stack_push_call_frame(ZEND_CALL_NESTED_FUNCTION,
+				fbc, opline->extended_value, called_scope, object, EX(call));
+		}
 
 		CHECK_EXCEPTION();
 		ZEND_VM_NEXT_OPCODE();
@@ -2677,6 +2688,7 @@ ZEND_VM_HANDLER(118, ZEND_INIT_USER_CALL, CONST, CONST|TMPVAR|CV)
 	zend_function *func;
 	zend_class_entry *called_scope;
 	zend_object *object;
+	zval *applied_args;
 
 	if (zend_is_callable_ex(function_name, NULL, 0, NULL, &fcc, &error)) {
 		if (error) {

@@ -175,6 +175,21 @@ static zend_always_inline zend_execute_data *zend_vm_stack_push_call_frame(uint3
 		func, num_args, called_scope, object, prev);
 }
 
+static zend_always_inline zend_execute_data *zend_vm_stack_push_call_frame_applied_args(uint32_t call_info, zend_function *func, uint32_t num_args, zend_class_entry *called_scope, zend_object *object, zend_execute_data *prev,
+	uint32_t num_applied_args, zval *applied_args)
+{
+	zend_execute_data *call = zend_vm_stack_push_call_frame(call_info, func, num_args + num_applied_args, called_scope, object, prev);
+
+	zval *dst_arg = ZEND_CALL_ARG(call, 1);
+	do {
+		ZVAL_COPY_VALUE(dst_arg, applied_args);
+		dst_arg++;
+		applied_args++;
+	} while (--num_applied_args);
+
+	return call;
+}
+
 static zend_always_inline void zend_vm_stack_free_extra_args(zend_execute_data *call)
 {
 	if (ZEND_CALL_INFO(call) & ZEND_CALL_FREE_EXTRA_ARGS) {

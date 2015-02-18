@@ -2578,8 +2578,13 @@ void zend_compile_call_common(znode *result, zend_ast *args_ast, zend_function *
 		opline->op1.num = zend_vm_calc_used_stack(arg_count, fbc);
 	}
 
+	if (opline->opcode == ZEND_NEW && zend_ast_get_list(args_ast)->kind == ZEND_AST_ARG_CURRIED_LIST) {
+		zend_error_noreturn(E_COMPILE_ERROR, "Can't partially apply class constructor");
+	}
+
 	call_flags = (opline->opcode == ZEND_NEW ? ZEND_CALL_CTOR : 0);
-	opline = zend_emit_op(result, ZEND_DO_FCALL, NULL, NULL);
+	opline = zend_emit_op(result,
+		zend_ast_get_list(args_ast) == ZEND_AST_ARG_CURRIED_LIST ? ZEND_DO_CURRY : ZEND_DO_FCALL, NULL, NULL);
 	opline->op1.num = call_flags;
 
 	zend_do_extended_fcall_end();
@@ -2649,6 +2654,7 @@ int zend_compile_func_strlen(znode *result, zend_ast_list *args) /* {{{ */
 
 	if ((CG(compiler_options) & ZEND_COMPILE_NO_BUILTIN_STRLEN)
 		|| args->children != 1 || args->child[0]->kind == ZEND_AST_UNPACK
+		|| args->kind == ZEND_AST_ARG_CURRIED_LIST
 	) {
 		return FAILURE;
 	}
@@ -2664,7 +2670,7 @@ int zend_compile_func_typecheck(znode *result, zend_ast_list *args, uint32_t typ
 	znode arg_node;
 	zend_op *opline;
 
-	if (args->children != 1 || args->child[0]->kind == ZEND_AST_UNPACK) {
+	if (args->children != 1 || args->kind == ZEND_AST_ARG_CURRIED_LIST || args->child[0]->kind == ZEND_AST_UNPACK) {
 		return FAILURE;
 	}
 
@@ -2680,7 +2686,7 @@ int zend_compile_func_defined(znode *result, zend_ast_list *args) /* {{{ */
 	zend_string *name;
 	zend_op *opline;
 
-	if (args->children != 1 || args->child[0]->kind != ZEND_AST_ZVAL) {
+	if (args->children != 1 || args->kind == ZEND_AST_ARG_CURRIED_LIST || args->child[0]->kind != ZEND_AST_ZVAL) {
 		return FAILURE;
 	}
 
@@ -2768,7 +2774,7 @@ int zend_compile_func_cufa(znode *result, zend_ast_list *args, zend_string *lcna
 	zend_compile_init_user_func(args->child[0], 0, lcname);
 	zend_compile_expr(&arg_node, args->child[1]);
 	zend_emit_op(NULL, ZEND_SEND_ARRAY, &arg_node, NULL);
-	zend_emit_op(result, ZEND_DO_FCALL, NULL, NULL);
+	zend_emit_op(result, args->kind == ZEND_AST_ARG_CURRIED_LIST ? ZEND_DO_CURRY : ZEND_DO_FCALL, NULL, NULL);
 
 	return SUCCESS;
 }
@@ -2809,7 +2815,7 @@ int zend_compile_func_cuf(znode *result, zend_ast_list *args, zend_string *lcnam
 		opline->op2.num = i;
 		opline->result.var = (uint32_t)(zend_intptr_t)ZEND_CALL_ARG(NULL, i);
 	}
-	zend_emit_op(result, ZEND_DO_FCALL, NULL, NULL);
+	zend_emit_op(result, args->kind == ZEND_AST_ARG_CURRIED_LIST ? ZEND_DO_CURRY : ZEND_DO_FCALL, NULL, NULL);
 
 	return SUCCESS;
 }
@@ -2879,7 +2885,9 @@ void zend_compile_call(znode *result, zend_ast *ast, uint32_t type) /* {{{ */
 		zend_string *lcname;
 		zend_function *fbc;
 		zend_op *opline;
+		zend_ast_list *args_list;
 
+		args_list = zend_ast_get_list(args_ast);
 		lcname = zend_string_tolower(Z_STR_P(name));
 
 		fbc = zend_hash_find_ptr(CG(function_table), lcname);
@@ -2891,9 +2899,7 @@ void zend_compile_call(znode *result, zend_ast *ast, uint32_t type) /* {{{ */
 			return;
 		}
 
-		if (zend_try_compile_special_func(result, lcname,
-				zend_ast_get_list(args_ast)) == SUCCESS
-		) {
+		if (args_list->kind != ZEND_AST_ARG_CURRIED_LIST && zend_try_compile_special_func(result, lcname, args_list) == SUCCESS) {
 			zend_string_release(lcname);
 			zval_ptr_dtor(&name_node.u.constant);
 			return;
