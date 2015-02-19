@@ -3198,7 +3198,7 @@ ZEND_VM_HANDLER(65, ZEND_SEND_VAL, CONST|TMP, ANY)
 
 	SAVE_OPLINE();
 	value = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	arg = ZEND_CALL_VAR(EX(call), opline->result.var);
+	arg = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
 	ZVAL_COPY_VALUE(arg, value);
 	if (OP1_TYPE == IS_CONST) {
 		if (UNEXPECTED(Z_OPT_COPYABLE_P(arg))) {
@@ -3215,11 +3215,11 @@ ZEND_VM_HANDLER(116, ZEND_SEND_VAL_EX, CONST|TMP, ANY)
 	zend_free_op free_op1;
 
 	SAVE_OPLINE();
-	if (ARG_MUST_BE_SENT_BY_REF(EX(call)->func, opline->op2.num)) {
-		zend_error_noreturn(E_ERROR, "Cannot pass parameter %d by reference", opline->op2.num);
+	if (ARG_MUST_BE_SENT_BY_REF(EX(call)->func, opline->op2.num + (uint32_t)EX(call)->arg_offset)) {
+		zend_error_noreturn(E_ERROR, "Cannot pass parameter %d by reference", opline->op2.num + (uint32_t)EX(call)->arg_offset);
 	}
 	value = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	arg = ZEND_CALL_VAR(EX(call), opline->result.var);
+	arg = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
 	ZVAL_COPY_VALUE(arg, value);
 	if (OP1_TYPE == IS_CONST) {
 		if (UNEXPECTED(Z_OPT_COPYABLE_P(arg))) {
@@ -3350,11 +3350,12 @@ ZEND_VM_HANDLER(165, ZEND_SEND_UNPACK, ANY, ANY)
 	USE_OPLINE
 	zend_free_op free_op1;
 	zval *args;
-	int arg_num;
+	int arg_num, cur_arg_offset;
 	SAVE_OPLINE();
 
 	args = GET_OP1_ZVAL_PTR(BP_VAR_R);
 	arg_num = ZEND_CALL_NUM_ARGS(EX(call)) + 1;
+	cur_arg_offset = EX(call)->arg_offset;
 
 ZEND_VM_C_LABEL(send_again):
 	switch (Z_TYPE_P(args)) {
@@ -3371,7 +3372,7 @@ ZEND_VM_C_LABEL(send_again):
 
 				/* check if any of arguments are going to be passed by reference */
 				for (i = 0; i < zend_hash_num_elements(ht); i++) {
-					if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num + i)) {
+					if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num + i + (uint32_t)cur_arg_offset)) {
 						separate = 1;
 						break;
 					}
@@ -3390,8 +3391,8 @@ ZEND_VM_C_LABEL(send_again):
 					ZEND_VM_NEXT_OPCODE();
 				}
 
-				top = ZEND_CALL_ARG(EX(call), arg_num);
-				if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num)) {
+				top = ZEND_CALL_ARG(EX(call), arg_num) + cur_arg_offset;
+				if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num + cur_arg_offset)) {
 					if (!Z_IMMUTABLE_P(args)) {
 						ZVAL_MAKE_REF(arg);
 						Z_ADDREF_P(arg);
@@ -3408,6 +3409,8 @@ ZEND_VM_C_LABEL(send_again):
 				ZEND_CALL_NUM_ARGS(EX(call))++;
 				arg_num++;
 			} ZEND_HASH_FOREACH_END();
+
+			EX(call)->arg_offset += zend_hash_num_elements(ht);
 
 			break;
 		}
@@ -3484,7 +3487,8 @@ ZEND_VM_C_LABEL(send_again):
 				}
 
 				zend_vm_stack_extend_call_frame(&EX(call), arg_num - 1, 1);
-				top = ZEND_CALL_ARG(EX(call), arg_num);
+				EX(call)->arg_offset++;
+				top = ZEND_CALL_ARG(EX(call), arg_num) + cur_arg_offset;
 				ZVAL_COPY_VALUE(top, arg);
 				ZEND_CALL_NUM_ARGS(EX(call))++;
 
@@ -3642,7 +3646,7 @@ ZEND_VM_HANDLER(120, ZEND_SEND_USER, VAR|CV, ANY)
 	zend_free_op free_op1;
 
 	arg = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	param = ZEND_CALL_VAR(EX(call), opline->result.var);
+	param = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
 
 	if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, opline->op2.num)) {
 		// TODO: Scalar values don't have reference counters anymore.
