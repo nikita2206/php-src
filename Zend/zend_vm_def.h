@@ -3350,12 +3350,11 @@ ZEND_VM_HANDLER(165, ZEND_SEND_UNPACK, ANY, ANY)
 	USE_OPLINE
 	zend_free_op free_op1;
 	zval *args;
-	uint32_t cur_arg_offset, arg_num;
+	uint32_t arg_num;
 	SAVE_OPLINE();
 
 	args = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	cur_arg_offset = EX(call)->arg_offset;
-	arg_num = opline->op2.num + cur_arg_offset + 1;
+	arg_num = opline->op2.num + EX(call)->arg_offset + 1;
 
 ZEND_VM_C_LABEL(send_again):
 	switch (Z_TYPE_P(args)) {

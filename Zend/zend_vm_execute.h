@@ -692,12 +692,11 @@ static int ZEND_FASTCALL  ZEND_SEND_UNPACK_SPEC_HANDLER(ZEND_OPCODE_HANDLER_ARGS
 	USE_OPLINE
 	zend_free_op free_op1;
 	zval *args;
-	uint32_t cur_arg_offset, arg_num;
+	uint32_t arg_num;
 	SAVE_OPLINE();
 
 	args = get_zval_ptr(opline->op1_type, opline->op1, execute_data, &free_op1, BP_VAR_R);
-	cur_arg_offset = EX(call)->arg_offset;
-	arg_num = opline->op2.num + cur_arg_offset + 1;
+	arg_num = opline->op2.num + EX(call)->arg_offset + 1;
 
 send_again:
 	switch (Z_TYPE_P(args)) {
