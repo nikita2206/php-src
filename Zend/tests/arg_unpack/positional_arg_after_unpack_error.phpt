@@ -1,10 +1,17 @@
 --TEST--
-Positional arguments cannot be used after argument unpacking
+Positional arguments can be used after argument unpacking
 --FILE--
 <?php
 
-var_dump(...[1, 2, 3], 4);
+var_dump(...[1, 2, 3], 4, ...[4, 6], 1, 0);
 
 ?>
---EXPECTF--
-Fatal error: Cannot use positional argument after argument unpacking in %s on line %d
+--EXPECT--
+int(1)
+int(2)
+int(3)
+int(4)
+int(4)
+int(6)
+int(1)
+int(0)
