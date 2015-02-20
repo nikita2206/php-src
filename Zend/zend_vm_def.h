@@ -3215,8 +3215,8 @@ ZEND_VM_HANDLER(116, ZEND_SEND_VAL_EX, CONST|TMP, ANY)
 	zend_free_op free_op1;
 
 	SAVE_OPLINE();
-	if (ARG_MUST_BE_SENT_BY_REF(EX(call)->func, opline->op2.num + (uint32_t)EX(call)->arg_offset)) {
-		zend_error_noreturn(E_ERROR, "Cannot pass parameter %d by reference", opline->op2.num + (uint32_t)EX(call)->arg_offset);
+	if (ARG_MUST_BE_SENT_BY_REF(EX(call)->func, opline->op2.num + EX(call)->arg_offset)) {
+		zend_error_noreturn(E_ERROR, "Cannot pass parameter %d by reference", opline->op2.num + EX(call)->arg_offset);
 	}
 	value = GET_OP1_ZVAL_PTR(BP_VAR_R);
 	arg = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
@@ -3236,7 +3236,7 @@ ZEND_VM_HANDLER(117, ZEND_SEND_VAR, VAR|CV, ANY)
 	zend_free_op free_op1;
 
 	varptr = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	arg = ZEND_CALL_VAR(EX(call), opline->result.var);
+	arg = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
 	if (Z_ISREF_P(varptr)) {
 		ZVAL_COPY(arg, Z_REFVAL_P(varptr));
 		FREE_OP1();
@@ -3258,7 +3258,7 @@ ZEND_VM_HANDLER(106, ZEND_SEND_VAR_NO_REF, VAR|CV, ANY)
 	SAVE_OPLINE();
 
 	if (!(opline->extended_value & ZEND_ARG_COMPILE_TIME_BOUND)) {
-		if (!ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, opline->op2.num)) {
+		if (!ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, opline->op2.num + EX(call)->arg_offset)) {
 			ZEND_VM_DISPATCH_TO_HANDLER(ZEND_SEND_VAR);
 		}
 	}
@@ -3275,12 +3275,12 @@ ZEND_VM_HANDLER(106, ZEND_SEND_VAR_NO_REF, VAR|CV, ANY)
 	} else {
 		if ((opline->extended_value & ZEND_ARG_COMPILE_TIME_BOUND) ?
 			!(opline->extended_value & ZEND_ARG_SEND_SILENT) :
-			!ARG_MAY_BE_SENT_BY_REF(EX(call)->func, opline->op2.num)) {
+			!ARG_MAY_BE_SENT_BY_REF(EX(call)->func, opline->op2.num + EX(call)->arg_offset)) {
 			zend_error(E_STRICT, "Only variables should be passed by reference");
 		}
 	}
 
-	arg = ZEND_CALL_VAR(EX(call), opline->result.var);
+	arg = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
 	ZVAL_COPY_VALUE(arg, varptr);
 
 	CHECK_EXCEPTION();
@@ -3300,7 +3300,7 @@ ZEND_VM_HANDLER(67, ZEND_SEND_REF, VAR|CV, ANY)
 		zend_error_noreturn(E_ERROR, "Only variables can be passed by reference");
 	}
 
-	arg = ZEND_CALL_VAR(EX(call), opline->result.var);
+	arg = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
 	if (OP1_TYPE == IS_VAR && UNEXPECTED(varptr == &EG(error_zval))) {
 		ZVAL_NEW_REF(arg, &EG(uninitialized_zval));
 		ZEND_VM_NEXT_OPCODE();
@@ -3328,11 +3328,11 @@ ZEND_VM_HANDLER(66, ZEND_SEND_VAR_EX, VAR|CV, ANY)
 	zval *varptr, *arg;
 	zend_free_op free_op1;
 
-	if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, opline->op2.num)) {
+	if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, opline->op2.num + EX(call)->arg_offset)) {
 		ZEND_VM_DISPATCH_TO_HANDLER(ZEND_SEND_REF);
 	}
 	varptr = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	arg = ZEND_CALL_VAR(EX(call), opline->result.var);
+	arg = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
 	if (Z_ISREF_P(varptr)) {
 		ZVAL_COPY(arg, Z_REFVAL_P(varptr));
 		FREE_OP1();
@@ -3350,12 +3350,12 @@ ZEND_VM_HANDLER(165, ZEND_SEND_UNPACK, ANY, ANY)
 	USE_OPLINE
 	zend_free_op free_op1;
 	zval *args;
-	int arg_num, cur_arg_offset;
+	uint32_t cur_arg_offset, arg_num;
 	SAVE_OPLINE();
 
 	args = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	arg_num = ZEND_CALL_NUM_ARGS(EX(call)) + 1;
 	cur_arg_offset = EX(call)->arg_offset;
+	arg_num = opline->op2.num + cur_arg_offset + 1;
 
 ZEND_VM_C_LABEL(send_again):
 	switch (Z_TYPE_P(args)) {
@@ -3364,7 +3364,7 @@ ZEND_VM_C_LABEL(send_again):
 			zval *arg, *top;
 			zend_string *name;
 
-			zend_vm_stack_extend_call_frame(&EX(call), arg_num - 1, zend_hash_num_elements(ht));
+			zend_vm_stack_extend_call_frame(&EX(call), ZEND_CALL_NUM_ARGS(EX(call)), zend_hash_num_elements(ht));
 
 			if (OP1_TYPE != IS_CONST && OP1_TYPE != IS_TMP_VAR && Z_IMMUTABLE_P(args)) {
 				uint32_t i;
@@ -3372,7 +3372,7 @@ ZEND_VM_C_LABEL(send_again):
 
 				/* check if any of arguments are going to be passed by reference */
 				for (i = 0; i < zend_hash_num_elements(ht); i++) {
-					if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num + i + (uint32_t)cur_arg_offset)) {
+					if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num + i)) {
 						separate = 1;
 						break;
 					}
@@ -3391,8 +3391,8 @@ ZEND_VM_C_LABEL(send_again):
 					ZEND_VM_NEXT_OPCODE();
 				}
 
-				top = ZEND_CALL_ARG(EX(call), arg_num) + cur_arg_offset;
-				if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num + cur_arg_offset)) {
+				top = ZEND_CALL_ARG(EX(call), arg_num);
+				if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, arg_num)) {
 					if (!Z_IMMUTABLE_P(args)) {
 						ZVAL_MAKE_REF(arg);
 						Z_ADDREF_P(arg);
@@ -3408,9 +3408,8 @@ ZEND_VM_C_LABEL(send_again):
 
 				ZEND_CALL_NUM_ARGS(EX(call))++;
 				arg_num++;
+				EX(call)->arg_offset++;
 			} ZEND_HASH_FOREACH_END();
-
-			EX(call)->arg_offset += zend_hash_num_elements(ht);
 
 			break;
 		}
@@ -3488,7 +3487,7 @@ ZEND_VM_C_LABEL(send_again):
 
 				zend_vm_stack_extend_call_frame(&EX(call), arg_num - 1, 1);
 				EX(call)->arg_offset++;
-				top = ZEND_CALL_ARG(EX(call), arg_num) + cur_arg_offset;
+				top = ZEND_CALL_ARG(EX(call), arg_num);
 				ZVAL_COPY_VALUE(top, arg);
 				ZEND_CALL_NUM_ARGS(EX(call))++;
 
@@ -3646,7 +3645,7 @@ ZEND_VM_HANDLER(120, ZEND_SEND_USER, VAR|CV, ANY)
 	zend_free_op free_op1;
 
 	arg = GET_OP1_ZVAL_PTR(BP_VAR_R);
-	param = ZEND_CALL_VAR(EX(call), opline->result.var) + EX(call)->arg_offset;
+	param = ZEND_CALL_VAR(EX(call), opline->result.var);
 
 	if (ARG_SHOULD_BE_SENT_BY_REF(EX(call)->func, opline->op2.num)) {
 		// TODO: Scalar values don't have reference counters anymore.
@@ -5986,13 +5985,13 @@ ZEND_VM_HANDLER(149, ZEND_HANDLE_EXCEPTION, ANY, ANY)
 					case ZEND_SEND_REF:
 					case ZEND_SEND_VAR_NO_REF:
 					case ZEND_SEND_USER:
+					case ZEND_SEND_UNPACK:
 						if (level == 0) {
-							ZEND_CALL_NUM_ARGS(call) = opline->op2.num;
+							ZEND_CALL_NUM_ARGS(call) = opline->op2.num + call->arg_offset;
 							do_exit = 1;
 						}
 						break;
 					case ZEND_SEND_ARRAY:
-					case ZEND_SEND_UNPACK:
 						if (level == 0) {
 							do_exit = 1;
 						}

@@ -2463,9 +2463,7 @@ uint32_t zend_compile_args(zend_ast *ast, zend_function *fbc) /* {{{ */
 	/* TODO.AST &var error */
 	zend_ast_list *args = zend_ast_get_list(ast);
 	uint32_t i;
-	zend_bool uses_arg_unpack = 0;
 	uint32_t arg_count = 0; /* number of arguments not including unpacks */
-	zend_op **unpack_oplines = (zend_op **)emalloc(sizeof(zend_op *) * args->children);
 
 	for (i = 0; i < args->children; ++i) {
 		zend_ast *arg = args->child[i];
@@ -2476,23 +2474,13 @@ uint32_t zend_compile_args(zend_ast *ast, zend_function *fbc) /* {{{ */
 		zend_uchar opcode;
 		zend_ulong flags = 0;
 
-		unpack_oplines[i] = NULL;
 		if (arg->kind == ZEND_AST_UNPACK) {
-			uses_arg_unpack = 1;
 			fbc = NULL;
-
 			zend_compile_expr(&arg_node, arg->child[0]);
 			opline = zend_emit_op(NULL, ZEND_SEND_UNPACK, &arg_node, NULL);
-			unpack_oplines[i] = opline;
-			//opline->op2.num = arg_count;
-			//opline->result.var = (uint32_t)(zend_intptr_t)ZEND_CALL_ARG(NULL, arg_count);
+			opline->op2.num = arg_count; /* store arg_num only of positional arguments */
 			continue;
 		}
-
-		/*if (uses_arg_unpack) {
-			zend_error_noreturn(E_COMPILE_ERROR,
-				"Cannot use positional argument after argument unpacking");
-		}*/
 
 		arg_count++;
 		if (zend_is_variable(arg)) {
@@ -2535,7 +2523,6 @@ uint32_t zend_compile_args(zend_ast *ast, zend_function *fbc) /* {{{ */
 				if (fbc) {
 					opcode = ZEND_SEND_VAL;
 					if (ARG_MUST_BE_SENT_BY_REF(fbc, arg_num)) {
-						efree(unpack_oplines);
 						zend_error_noreturn(E_COMPILE_ERROR, "Only variables can be passed by reference");
 					}
 				} else {
@@ -2548,8 +2535,8 @@ uint32_t zend_compile_args(zend_ast *ast, zend_function *fbc) /* {{{ */
 		opline->opcode = opcode;
 		SET_NODE(opline->op1, &arg_node);
 		SET_UNUSED(opline->op2);
-		opline->op2.opline_num = arg_num;
-		opline->result.var = (uint32_t)(zend_intptr_t)ZEND_CALL_ARG(NULL, arg_num);
+		opline->op2.opline_num = arg_count;
+		opline->result.var = (uint32_t)(zend_intptr_t)ZEND_CALL_ARG(NULL, arg_count);
 
 		if (opcode == ZEND_SEND_VAR_NO_REF) {
 			if (fbc) {
@@ -2565,14 +2552,6 @@ uint32_t zend_compile_args(zend_ast *ast, zend_function *fbc) /* {{{ */
 			opline->extended_value = ZEND_ARG_COMPILE_TIME_BOUND;
 		}
 	}
-
-	for (i = 0; i < args->children; ++i) {
-		if (unpack_oplines[i] != NULL) {
-			unpack_oplines[i]->op2.num = arg_count;
-			unpack_oplines[i]->result.var = (uint32_t)(zend_intptr_t)ZEND_CALL_ARG(NULL, arg_count);
-		}
-	}
-	efree(unpack_oplines);
 
 	return arg_count;
 }
