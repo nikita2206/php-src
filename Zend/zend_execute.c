@@ -751,7 +751,9 @@ static zend_always_inline int zend_verify_arg_type(zend_function *zf, uint32_t a
 		return 1;
 	}
 
-	if (cur_arg_info->type_hint) {
+	if ( ! cur_arg_info->type_hint && cur_arg_info->class_name) {
+		char *class_name;
+
 		ZVAL_DEREF(arg);
 		if (EXPECTED(cur_arg_info->type_hint == Z_TYPE_P(arg))) {
 			if (cur_arg_info->class_name) {

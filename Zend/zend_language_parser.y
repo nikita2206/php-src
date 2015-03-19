@@ -249,7 +249,7 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %type <ast> class_const_list class_const_decl name_list trait_adaptations method_body non_empty_for_exprs
 %type <ast> ctor_arguments alt_if_stmt_without_else trait_adaptation_list lexical_vars
 %type <ast> lexical_var_list encaps_list array_pair_list non_empty_array_pair_list
-%type <ast> assignment_list isset_variable type return_type
+%type <ast> assignment_list isset_variable type return_type non_empty_callable_arg_type_list callable_arg_type_list
 %type <ast> identifier
 
 %type <num> returns_ref function is_reference is_variadic variable_modifiers
@@ -627,14 +627,27 @@ optional_type:
 ;
 
 type:
-		T_ARRAY		{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_ARRAY); }
-	|	T_CALLABLE	{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_CALLABLE); }
-	|	name		{ $$ = $1; }
+		T_ARRAY			{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_ARRAY); }
+	|	T_CALLABLE callable_arg_type_list return_type
+					{ $$ = zend_ast_create_ex(ZEND_AST_TYPE_CALLABLE, IS_CALLABLE, $2, $3); }
+	|	name			{ $$ = $1; }
 ;
 
 return_type:
 		/* empty */	{ $$ = NULL; }
 	|	':' type	{ $$ = $2; }
+;
+
+callable_arg_type_list:
+		/* empty */	{ $$ = NULL; }
+	|	'(' ')'		{ $$ = zend_ast_create_list(0, ZEND_AST_PARAM_LIST); }
+	|	'(' non_empty_callable_arg_type_list ')' { $$ = $2; }
+;
+
+non_empty_callable_arg_type_list:
+		type	{ $$ = zend_ast_create_list(1, ZEND_AST_PARAM_LIST, $1); }
+	|	non_empty_callable_arg_type_list ',' type
+			{ $$ = zend_ast_list_add($1, $3); }
 ;
 
 argument_list:
