@@ -409,6 +409,54 @@ static void zend_persist_zval_const(zval *z)
 	}
 }
 
+static void zend_persist_arg_info(zend_arg_info *arg)
+{
+	if (arg->name) {
+		zend_accel_store_interned_string(arg->name);
+	}
+	if (arg->type_hint != IS_CALLABLE && arg->class_name) {
+		zend_accel_store_interned_string(arg->class_name);
+	}
+
+	if (arg->type_hint == IS_CALLABLE && arg->children) {
+		zend_arg_callable_info *callable_type = (zend_arg_callable_info *)arg;
+		zend_arg_info *children = callable_type->children;
+		uint32_t num_args = 0;
+
+		if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
+			num_args++;
+			children--;
+			//zend_persist_arg_info(children);
+		}
+
+		if ((callable_type->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(callable_type->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
+			zend_arg_info *child = callable_type->children;
+
+			num_args++; // for zero-termination
+			do {
+				//zend_persist_arg_info(child);
+				num_args++;
+				child++;
+			} while (child->type_hint || child->name);
+		}
+
+		if (num_args) {
+			uint32_t i;
+
+			zend_accel_store(children, sizeof(zend_arg_info) * num_args);
+			for (i = 0; i < num_args && (children[i].type_hint || children[i].name); i++) {
+				zend_persist_arg_info(&children[i]);
+			}
+
+			if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
+				children++;
+			}
+
+			callable_type->children = children;
+		}
+	}
+}
+
 static void zend_persist_op_array_ex(zend_op_array *op_array, zend_persistent_script* main_persistent_script)
 {
 	int already_stored = 0;
@@ -575,12 +623,7 @@ static void zend_persist_op_array_ex(zend_op_array *op_array, zend_persistent_sc
 			}
 			zend_accel_store(arg_info, sizeof(zend_arg_info) * num_args);
 			for (i = 0; i < num_args; i++) {
-				if (arg_info[i].name) {
-					zend_accel_store_interned_string(arg_info[i].name);
-				}
-				if (arg_info[i].class_name) {
-					zend_accel_store_interned_string(arg_info[i].class_name);
-				}
+				zend_persist_arg_info(&arg_info[i]);
 			}
 		}
 		if (op_array->fn_flags & ZEND_ACC_HAS_RETURN_TYPE) {

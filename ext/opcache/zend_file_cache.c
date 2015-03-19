@@ -339,6 +339,37 @@ static void zend_file_cache_serialize_zval(zval                     *zv,
 	}
 }
 
+static void zend_file_cache_serialize_arg_info(zend_arg_info *arg)
+{
+	if (arg->name && !IS_SERIALIZED(arg->name)) {
+		SERIALIZE_STR(arg->name);
+	}
+	if (arg->type_hint != IS_CALLABLE && !IS_SERIALIZED(arg->class_name)) {
+		SERIALIZE_STR(p->class_name);
+	}
+
+	if (arg->type_hint == IS_CALLABLE && arg->children && !IS_SERIALIZED(arg->children)) {
+		zend_arg_callable_info *callable_type;
+		zend_arg_info *child;
+
+		callable_type = (zend_arg_callable_info *)arg;
+		SERIALIZE_PTR(callable_type->children);
+		child = callable_type->children;
+		UNSERIALIZE_PTR(callable_type->children);
+
+		if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
+			zend_file_cache_serialize_arg_info(child - 1);
+		}
+
+		if ((callable_type->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(callable_type->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
+			do {
+				zend_file_cache_serialize_arg_info(child);
+				child++;
+			} while (child->name || child->type_hint);
+		}
+	}
+}
+
 static void zend_file_cache_serialize_op_array(zend_op_array            *op_array,
                                                zend_persistent_script   *script,
                                                zend_file_cache_metainfo *info,
@@ -431,12 +462,7 @@ static void zend_file_cache_serialize_op_array(zend_op_array            *op_arra
 				end++;
 			}
 			while (p < end) {
-				if (!IS_SERIALIZED(p->name)) {
-					SERIALIZE_STR(p->name);
-				}
-				if (!IS_SERIALIZED(p->class_name)) {
-					SERIALIZE_STR(p->class_name);
-				}
+				zend_file_cache_serialize_arg_info(p);
 				p++;
 			}
 		}
@@ -979,12 +1005,7 @@ static void zend_file_cache_unserialize_op_array(zend_op_array           *op_arr
 				end++;
 			}
 			while (p < end) {
-				if (!IS_UNSERIALIZED(p->name)) {
-					UNSERIALIZE_STR(p->name);
-				}
-				if (!IS_UNSERIALIZED(p->class_name)) {
-					UNSERIALIZE_STR(p->class_name);
-				}
+				zend_file_cache_unserialize_arg_info(p);
 				p++;
 			}
 		}
@@ -1010,6 +1031,38 @@ static void zend_file_cache_unserialize_op_array(zend_op_array           *op_arr
 		UNSERIALIZE_STR(op_array->doc_comment);
 		UNSERIALIZE_PTR(op_array->try_catch_array);
 		UNSERIALIZE_PTR(op_array->prototype);
+	}
+}
+
+static void zend_file_cache_unserialize_arg_info(zend_arg_info *arg)
+{
+	if (arg->name && !IS_UNSERIALIZED(arg->name)) {
+		UNSERIALIZE_STR(arg->name);
+	}
+
+	if (arg->type_hint != IS_CALLABLE && !IS_UNSERIALIZED(arg->class_name)) {
+		UNSERIALIZE_STR(arg->class_name);
+	}
+
+
+	if (arg->type_hint == IS_CALLABLE && arg->children && !IS_UNSERIALIZED(arg->children)) {
+		zend_arg_callable_info *callable_type;
+		zend_arg_info *child;
+
+		callable_type = (zend_arg_callable_info *)arg;
+		UNSERIALIZE_PTR(callable_type->children);
+		child = callable_type->children;
+
+		if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
+			zend_file_cache_unserialize_arg_info(child - 1);
+		}
+
+		if ((callable_type->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(callable_type->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
+			do {
+				zend_file_cache_unserialize_arg_info(child);
+				child++;
+			} while (child->name || child->type_hint);
+		}
 	}
 }
 

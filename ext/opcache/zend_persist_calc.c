@@ -150,6 +150,47 @@ static void zend_persist_zval_calc(zval *z)
 	}
 }
 
+static void zend_persist_arg_info_calc(zend_arg_info *arg)
+{
+	if (arg->name) {
+		ADD_INTERNED_STRING(arg->name, 1);
+	}
+	if (arg->type_hint != IS_CALLABLE && arg->class_name) {
+		ADD_INTERNED_STRING(arg->class_name, 1);
+	}
+
+	if (arg->type_hint == IS_CALLABLE && arg->children) {
+		zend_arg_callable_info *callable_type = (zend_arg_callable_info *)arg;
+		zend_arg_info *children = callable_type->children;
+		uint32_t num_args = 0;
+
+		if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
+			children--;
+			num_args++;
+			//zend_persist_arg_info_calc(children);
+		}
+
+		if ((callable_type->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(callable_type->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
+			zend_arg_info *child = callable_type->children;
+			num_args++;
+			do {
+				//zend_persist_arg_info_calc(child);
+				num_args++;
+				child++;
+			} while (child->name || child->type_hint);
+		}
+
+		if (num_args) {
+			uint32_t i;
+
+			ADD_DUP_SIZE(children, sizeof(zend_arg_info) * num_args);
+			for (i = 0; i < num_args && (children[i].type_hint || children[i].name); i++) {
+				zend_persist_arg_info_calc(&children[i]);
+			}
+		}
+	}
+}
+
 static void zend_persist_op_array_calc_ex(zend_op_array *op_array)
 {
 	if (op_array->type != ZEND_USER_FUNCTION) {
@@ -220,12 +261,7 @@ static void zend_persist_op_array_calc_ex(zend_op_array *op_array)
 		}
 		ADD_DUP_SIZE(arg_info, sizeof(zend_arg_info) * num_args);
 		for (i = 0; i < num_args; i++) {
-			if (arg_info[i].name) {
-				ADD_INTERNED_STRING(arg_info[i].name, 1);
-			}
-			if (arg_info[i].class_name) {
-				ADD_INTERNED_STRING(arg_info[i].class_name, 1);
-			}
+			zend_persist_arg_info_calc(&arg_info[i]);
 		}
 	}
 

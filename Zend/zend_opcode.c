@@ -335,6 +335,34 @@ void zend_class_add_ref(zval *zv)
 	ce->refcount++;
 }
 
+void destroy_op_array_arg_info(zend_arg_info *arg_info)
+{
+	if (arg_info->name) {
+		zend_string_release(arg_info->name);
+	}
+	if (arg_info->class_name && arg_info->type_hint != IS_CALLABLE) {
+		zend_string_release(arg_info->class_name);
+	}
+
+	if (arg_info->type_hint == IS_CALLABLE && arg_info->children) {
+		zend_arg_callable_info *cb_arg_info = (zend_arg_callable_info *)arg_info;
+		zend_arg_info *args = cb_arg_info->children;
+
+		if (cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
+			destroy_op_array_arg_info(cb_arg_info->children - 1);
+		}
+
+		if ((cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(cb_arg_info->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
+			do {
+				destroy_op_array_arg_info(args);
+				args++;
+			} while (args->type_hint || args->name);
+		}
+
+		efree(cb_arg_info->children - (cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE ? 1 : 0));
+	}
+}
+
 ZEND_API zend_bool destroy_op_array(zend_op_array *op_array)
 {
 	zval *literal = op_array->literals;
@@ -410,12 +438,7 @@ ZEND_API zend_bool destroy_op_array(zend_op_array *op_array)
 			num_args++;
 		}
 		for (i = 0 ; i < num_args; i++) {
-			if (arg_info[i].name) {
-				zend_string_release(arg_info[i].name);
-			}
-			if (arg_info[i].class_name) {
-				zend_string_release(arg_info[i].class_name);
-			}
+			destroy_op_array_arg_info(&arg_info[i]);
 		}
 		efree(arg_info);
 	}
