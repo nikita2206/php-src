@@ -4280,6 +4280,7 @@ void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_i
 
 	if (nb_args) {
 		cb_arg_info->children[nb_args - 1].type_hint = 0;
+		cb_arg_info->children[nb_args - 1].class_name = NULL;
 	}
 
 	if (has_return_type) {
@@ -4301,6 +4302,7 @@ void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_i
 		arg_info->type_hint = 0;
 		arg_info->allow_null = 1;
 		arg_info->class_name = NULL;
+		arg_info->children = NULL;
 
 		if (type_ast->kind == ZEND_AST_TYPE) {
 			arg_info->type_hint = type_ast->attr;

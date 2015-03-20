@@ -737,25 +737,85 @@ static void zend_verify_internal_arg_type(zend_function *zf, uint32_t arg_num, z
 	}
 }
 
-static zend_always_inline zend_bool zend_callable_verify_return_type(const zend_arg_info *return_type, const zend_arg_info *expected_return_type)
+static zend_always_inline zend_bool zend_callable_verify_return_type(const zend_arg_info *return_type, const zend_arg_info *expected_return_type, const zend_bool variance);
+static zend_always_inline zend_bool zend_callable_verify_signature_callable(const zend_arg_callable_info *arg_info, const zend_arg_callable_info *expected_arg_info, const zend_bool variance);
+static zend_always_inline zend_bool zend_callable_verify_arg_type(const zend_arg_info *arg_info, const zend_arg_info *expected_arg_info, const zend_bool variance);
+
+
+/* variance should be zero for contravariant args and covariant returns, and 1 for the opposite (variance has to be inverted for each level of callable() nesting) */
+static zend_always_inline zend_bool zend_callable_verify_return_type(const zend_arg_info *return_type, const zend_arg_info *expected_return_type, const zend_bool variance)
 {
 	if (return_type->type_hint != expected_return_type->type_hint) {
 		return 0;
 	}
 
 	if (return_type->type_hint == IS_CALLABLE) {
-		return zend_callable_verify_signature_ex();
-	} else if (!return_type->type_hint && return_type->class_name && !expected_return_type->type_hint && expected_return_type->class_name) {
-		
+		return zend_callable_verify_signature_callable((zend_arg_callable_info *)return_type, (zend_arg_callable_info *)expected_return_type, !variance);
+	} else if (return_type->type_hint == IS_OBJECT && return_type->class_name && expected_return_type->class_name) {
+		if (!return_type->class_name || !expected_return_type->class_name) {
+			return 0;
+		}
+
+		zend_class_entry *ce, *expected_ce;
+		ce = zend_fetch_class_by_name(return_type->class_name, NULL, 0);
+		expected_ce = zend_fetch_class_by_name(expected_return_type->class_name, NULL, 0);
+
+		if (ce != expected_ce && ((variance && !instanceof_function(expected_ce, ce)) || (!variance && !instanceof_function(ce, expected_ce)))) {
+			return 0;
+		}
 	}
+
+	return 1;
 }
 
-static zend_always_inline zend_bool zend_callable_verify_signature_callable(zend_arg_callabe_info *arg_info, zend_arg_callable_info *expected_arg_info)
+static zend_always_inline zend_bool zend_callable_verify_signature_callable(const zend_arg_callable_info *arg_info, const zend_arg_callable_info *expected_arg_info, const zend_bool variance)
 {
-	
+	const zend_arg_callable_info *arg_info1 = variance ? expected_arg_info : arg_info;
+	const zend_arg_callable_info *arg_info2 = variance ? arg_info : expected_arg_info;
+
+	if (!(arg_info1->arg_flags & (ZEND_CALLABLE_HAS_RETURN_TYPE | ZEND_CALLABLE_HAS_ARGS_DECLARED))) {
+		return 1;
+	}
+
+	if ((arg_info1->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) && !(arg_info2->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE)) {
+		return 0;
+	}
+
+	/* arg_info1 expects zero args, but arg_info2 more than one */
+	if ((arg_info1->arg_flags & (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS))
+		== (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS)
+		&& (arg_info2->arg_flags & (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS))
+		== ZEND_CALLABLE_HAS_ARGS_DECLARED) {
+
+		return 0;
+	}
+
+	if (arg_info1->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE && !zend_callable_verify_return_type(arg_info1->children - 1, arg_info2->children - 1, 0)) {
+		return 0;
+	}
+
+	if ((arg_info1->arg_flags & (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) == ZEND_CALLABLE_HAS_ARGS_DECLARED) {
+		const zend_arg_info *cur_arg1 = arg_info1->children;
+		const zend_arg_info *cur_arg2 = arg_info2->children;
+
+		do {
+			/* contravariant implementor has lower expectations on input - hence it passes the check */
+			if (!cur_arg2->type_hint) {
+				break;
+			}
+
+			if (!zend_callable_verify_arg_type(cur_arg1, cur_arg2, 0)) {
+				return 0;
+			}
+
+			cur_arg1++;
+			cur_arg2++;
+		} while (cur_arg1->type_hint); /* the list is zero-terminated with type_hint=0 */
+	}
+
+	return 1;
 }
 
-/* variance should be zero for contravariant args and covariant returns, and 1 for the opposite (variance has to be inverted for each level of callable() nesting) */
 static zend_always_inline zend_bool zend_callable_verify_arg_type(const zend_arg_info *arg_info, const zend_arg_info *expected_arg_info, const zend_bool variance)
 {
 	if (arg_info->type_hint != expected_arg_info->type_hint) {
@@ -771,11 +831,11 @@ static zend_always_inline zend_bool zend_callable_verify_arg_type(const zend_arg
 		ce = zend_verify_arg_class_kind(arg_info);
 		expected_ce = zend_verify_arg_class_kind(expected_arg_info);
 
-		if (ce == expected_ce || (variance xor !instanceof_function(exptected_ce, ce))) {
+		if (ce != expected_ce && ((variance && !instanceof_function(ce, expected_ce)) || (!variance && !instanceof_function(expected_ce, ce)))) {
 			return 0;
 		}
 	} else if (arg_info->type_hint == IS_CALLABLE) {
-		return zend_callable_verify_signature_callable((zend_arg_callable_info *)arg_info, (zend_arg_callable_info *)expected_arg_info);
+		return zend_callable_verify_signature_callable((zend_arg_callable_info *)arg_info, (zend_arg_callable_info *)expected_arg_info, !variance);
 	}
 
 	return 1;
@@ -787,40 +847,35 @@ static zend_always_inline zend_bool zend_callable_verify_signature_function(cons
 		return 1;
 	}
 
-	if ((arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) && !(zf.common->fn_flags & ZEND_ACC_HAS_RETURN_TYPE)) {
+	if ((arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) && !(zf->common.fn_flags & ZEND_ACC_HAS_RETURN_TYPE)) {
 		return 0;
 	}
 
 	if ((arg_info->arg_flags & (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS))
-		== (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS) && zf.common->required_num_args > 0) {
+		== (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS) && zf->common.required_num_args > 0) {
 
 		return 0;
 	}
 
-	if (arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
-		zend_arg_info expected_return_type = arg_info->children[-1];
-		zend_arg_info return_type = arg_info[-1];
-
-		if (!zend_callable_verify_return_type(arg_info - 1, arg_info->children - 1)) {
-			return 0;
-		}
+	if ((arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) && !zend_callable_verify_return_type(zf->common.arg_info - 1, arg_info->children - 1, 0)) {
+		return 0;
 	}
 
-	if ((arg_info->arg_flags & (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) == ZEND_CALLABLE_HAS_ARGS_DECLARED && zf.common->arg_info) {
+	if ((arg_info->arg_flags & (ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) == ZEND_CALLABLE_HAS_ARGS_DECLARED && zf->common.arg_info) {
 		zend_arg_info *cur_exp_arg_info = arg_info->children;
-		zend_arg_info *cur_arg_info = zf.common->arg_info;
+		zend_arg_info *cur_arg_info = zf->common.arg_info;
 		uint32_t arg_num = 1;
 
 		do {
 			/* if implementor has lower expectations than we require it to have (dropped args) then it's compatible */
 
-			if (!zend_callable_verify_arg_type(cur_arg_info, cur_exp_arg_info)) {
+			if (!zend_callable_verify_arg_type(cur_arg_info, cur_exp_arg_info, 0)) {
 				return 0;
 			}
 
 			cur_arg_info++;
 			cur_exp_arg_info++;
-		} while ((cur_arg_info->type_hint || cur_arg_info->class_name) && ++arg_num <= zf.common->num_args);
+		} while ((cur_arg_info->type_hint || cur_arg_info->class_name) && ++arg_num <= zf->common.num_args);
 	}
 
 	return 1;
@@ -907,12 +962,12 @@ static zend_always_inline int zend_verify_arg_type(zend_function *zf, uint32_t a
 		} else if (cur_arg_info->type_hint == IS_CALLABLE) {
 			zend_fcall_info_cache callable_fcc;
 
-			if (!zend_is_callable_ex(arg, NULL, IS_CALLABLE_CHECK_SILENT, NULL, callable_fcc, NULL)
+			if (!zend_is_callable_ex(arg, NULL, IS_CALLABLE_CHECK_SILENT, NULL, &callable_fcc, NULL)
 				&& (Z_TYPE_P(arg) != IS_NULL || !(cur_arg_info->allow_null || (default_value && is_null_constant(default_value))))) {
 
 				zend_verify_arg_error(E_EXCEPTION | E_ERROR, zf, arg_num, "be callable", "", zend_zval_type_name(arg), "", arg);
 				return 0;
-			} else if (Z_TYPE_P(arg) != IS_NULL && !zend_callable_verify_signature_function((zend_arg_callable_info *)cur_arg_info, callable_fcc->function_handler)) {
+			} else if (Z_TYPE_P(arg) != IS_NULL && !zend_callable_verify_signature_function((zend_arg_callable_info *)cur_arg_info, callable_fcc.function_handler)) {
 				zend_verify_arg_error(E_EXCEPTION | E_ERROR, zf, arg_num, "be callable of compliant signature", "", zend_zval_type_name(arg), "", arg);
 				return 0;
 			}
