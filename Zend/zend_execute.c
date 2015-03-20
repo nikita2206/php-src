@@ -968,7 +968,7 @@ static zend_always_inline int zend_verify_arg_type(zend_function *zf, uint32_t a
 				zend_verify_arg_error(E_EXCEPTION | E_ERROR, zf, arg_num, "be callable", "", zend_zval_type_name(arg), "", arg);
 				return 0;
 			} else if (Z_TYPE_P(arg) != IS_NULL && !zend_callable_verify_signature_function((zend_arg_callable_info *)cur_arg_info, callable_fcc.function_handler)) {
-				zend_verify_arg_error(E_EXCEPTION | E_ERROR, zf, arg_num, "be callable of compliant signature", "", zend_zval_type_name(arg), "", arg);
+				zend_verify_arg_error(zf, arg_num, "be callable of compliant signature", "", zend_zval_type_name(arg), "", arg);
 				return 0;
 			}
 		}
@@ -1160,8 +1160,12 @@ static zend_always_inline void zend_verify_return_type(zend_function *zf, zval *
 					"implement interface " : "be an instance of ";
 				zend_verify_return_error(zf, need_msg, ZSTR_VAL(ce->name), zend_zval_type_name(ret), "");
 			} else if (ret_info->type_hint == IS_CALLABLE) {
-				if (!zend_is_callable(ret, IS_CALLABLE_CHECK_SILENT, NULL)) {
+				zend_fcall_info_cache callable_fcc;
+
+				if (!zend_is_callable_ex(ret, NULL, IS_CALLABLE_CHECK_SILENT, NULL, &callable_fcc, NULL) && (Z_TYPE_P(ret) != IS_NULL || !ret_info->allow_null)) {
 					zend_verify_return_error(zf, "be callable", "", zend_zval_type_name(ret), "");
+				} else if (Z_TYPE_P(ret) != IS_NULL && !zend_callable_verify_signature_function((zend_arg_callable_info *)ret_info, callable_fcc.function_handler)) {
+					zend_verify_return_error(zf, "be callable of compliant signature", "", "non-compliant callable", "");
 				}
 			} else if (ret_info->type_hint == _IS_BOOL &&
 			           EXPECTED(Z_TYPE_P(ret) == IS_FALSE || Z_TYPE_P(ret) == IS_TRUE)) {

@@ -630,6 +630,8 @@ type:
 		T_ARRAY			{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_ARRAY); }
 	|	T_CALLABLE callable_arg_type_list return_type
 					{ $$ = zend_ast_create_ex(ZEND_AST_TYPE_CALLABLE, IS_CALLABLE, $2, $3); }
+	|	'(' T_CALLABLE callable_arg_type_list return_type ')'
+					{ $$ = zend_ast_create_ex(ZEND_AST_TYPE_CALLABLE, IS_CALLABLE, $3, $4); }
 	|	name			{ $$ = $1; }
 ;
 
