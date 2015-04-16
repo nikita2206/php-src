@@ -918,6 +918,28 @@ static void zend_ast_export_zval(smart_str *str, zval *zv, int priority, int ind
 	}
 }
 
+static void zend_ast_export_callable_type(smart_str *str, zend_ast *ast, int indent)
+{
+	smart_str_appends(str, "callable");
+
+	if (ast->child[0]) {
+		smart_str_appendc(str, '(');
+		zend_ast_export_list(str, (zend_ast_list *) ast->child[0], 1, 0, indent);
+		smart_str_appendc(str, ')');
+	}
+
+	if (ast->child[1]) {
+		smart_str_appends(str, ": ");
+		if (ast->child[1]->attr == IS_CALLABLE) {
+			smart_str_appendc(str, '(');
+		}
+		zend_ast_export_ex(str, ast->child[1], 0, indent);
+		if (ast->child[1]->attr == IS_CALLABLE) {
+			smart_str_appendc(str, ')');
+		}
+	}
+}
+
 #define BINARY_OP(_op, _p, _pl, _pr) do { \
 		op = _op; \
 		p = _p; \
@@ -1141,9 +1163,11 @@ simple_list:
 		case ZEND_AST_TYPE:
 			switch (ast->attr) {
 				case IS_ARRAY:    APPEND_STR("array");
-				case IS_CALLABLE: APPEND_STR("callable");
 				EMPTY_SWITCH_DEFAULT_CASE();
 			}
+			break;
+		case ZEND_AST_TYPE_CALLABLE:
+			zend_ast_export_callable_type(str, ast, indent);
 			break;
 
 		/* 1 child node */
