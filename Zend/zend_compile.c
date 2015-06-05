@@ -4251,7 +4251,52 @@ void zend_compile_stmt_list(zend_ast *ast) /* {{{ */
 }
 /* }}} */
 
-void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_info *cb_arg_info, zend_bool is_method) /* {{{ */
+static void zend_compile_typename(zend_ast *ast, zend_arg_info *arg_info) /* {{{ */
+{
+	if (ast->kind == ZEND_AST_TYPE) {
+		arg_info->type_hint = ast->attr;
+	} else {
+		zend_string *class_name = zend_ast_get_str(ast);
+		zend_uchar type = zend_lookup_builtin_type_by_name(class_name);
+
+		if (type != 0) {
+			arg_info->type_hint = type;
+		} else {
+			uint32_t fetch_type = zend_get_class_fetch_type_ast(ast);
+			if (fetch_type == ZEND_FETCH_CLASS_DEFAULT) {
+				class_name = zend_resolve_class_name_ast(ast);
+				zend_assert_valid_class_name(class_name);
+			} else {
+				zend_ensure_valid_class_fetch_type(fetch_type);
+				zend_string_addref(class_name);
+			}
+
+			arg_info->type_hint = IS_OBJECT;
+			arg_info->class_name = class_name;
+		}
+	}
+}
+/* }}} */
+
+void zend_compile_return_type(zend_ast *type_ast, zend_arg_info *arg_info, zend_uchar by_ref) /* {{{ */
+{
+	arg_info->name = NULL;
+	arg_info->pass_by_reference = by_ref;
+	arg_info->is_variadic = 0;
+	arg_info->type_hint = 0;
+	arg_info->allow_null = 0;
+	arg_info->class_name = NULL;
+
+	if (type_ast->kind == ZEND_AST_TYPE_CALLABLE) {
+		zend_compile_callable_arg_info(type_ast, (zend_arg_callable_info *)arg_info);
+	} else {
+		zend_compile_typename(type_ast, arg_info);
+	}
+}
+/* }}} */
+
+
+void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_info *cb_arg_info) /* {{{ */
 {
 	int has_return_type = ast->child[1] ? 1 : 0;
 	zend_ast_list *args_list = ast->child[0] ? zend_ast_get_list(ast->child[0]) : NULL;
@@ -4284,8 +4329,7 @@ void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_i
 	}
 
 	if (has_return_type) {
-		cb_arg_info->children[-1].pass_by_reference = 0;
-		zend_compile_return_type(ast->child[1], cb_arg_info->children - 1, is_method);
+		zend_compile_return_type(ast->child[1], cb_arg_info->children - 1, 0);
 	}
 
 	for (i = 0; i < nb_args; i++) {
@@ -4307,7 +4351,7 @@ void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_i
 		if (type_ast->kind == ZEND_AST_TYPE) {
 			arg_info->type_hint = type_ast->attr;
 		} else if (type_ast->kind == ZEND_AST_TYPE_CALLABLE) {
-			zend_compile_callable_arg_info(type_ast, (zend_arg_callable_info *)arg_info, is_method);
+			zend_compile_callable_arg_info(type_ast, (zend_arg_callable_info *)arg_info);
 		} else {
 			zend_string *class_name = zend_ast_get_str(type_ast);
 
@@ -4324,84 +4368,6 @@ void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_i
 }
 /* }}} */
 
-void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast, zend_bool is_method) /* {{{ */
-{
-	uint32_t i, n;
-
-	func->common.arg_flags[0] = 0;
-	func->common.arg_flags[1] = 0;
-	func->common.arg_flags[2] = 0;
-	if (func->common.arg_info) {
-		n = MIN(func->common.num_args, MAX_ARG_FLAG_NUM);
-		i = 0;
-		while (i < n) {
-			ZEND_SET_ARG_FLAG(func, i + 1, func->common.arg_info[i].pass_by_reference);
-			i++;
-		}
-		if (UNEXPECTED(func->common.fn_flags & ZEND_ACC_VARIADIC && func->common.arg_info[i].pass_by_reference)) {
-			uint32_t pass_by_reference = func->common.arg_info[i].pass_by_reference;
-			while (i < MAX_ARG_FLAG_NUM) {
-				ZEND_SET_ARG_FLAG(func, i + 1, pass_by_reference);
-				i++;
-			}
-		}
-	}
-}
-/* }}} */
-
-static void zend_compile_typename(zend_ast *ast, zend_arg_info *arg_info) /* {{{ */
-{
-	if (ast->kind == ZEND_AST_TYPE) {
-		arg_info->type_hint = ast->attr;
-	} else {
-		zend_string *class_name = zend_ast_get_str(ast);
-		zend_uchar type = zend_lookup_builtin_type_by_name(class_name);
-
-		if (type != 0) {
-			arg_info->type_hint = type;
-		} else {
-			uint32_t fetch_type = zend_get_class_fetch_type_ast(ast);
-			if (fetch_type == ZEND_FETCH_CLASS_DEFAULT) {
-				class_name = zend_resolve_class_name_ast(ast);
-				zend_assert_valid_class_name(class_name);
-			} else {
-				zend_ensure_valid_class_fetch_type(fetch_type);
-				zend_string_addref(class_name);
-			}
-
-			arg_info->type_hint = IS_OBJECT;
-			arg_info->class_name = class_name;
-		}
-	}
-}
-/* }}} */
-
-
-ZEND_API void zend_set_function_arg_flags(zend_function *func) /* {{{ */
-{
-	uint32_t i, n;
-
-	func->common.arg_flags[0] = 0;
-	func->common.arg_flags[1] = 0;
-	func->common.arg_flags[2] = 0;
-	if (func->common.arg_info) {
-		n = MIN(func->common.num_args, MAX_ARG_FLAG_NUM);
-		i = 0;
-		while (i < n) {
-			ZEND_SET_ARG_FLAG(func, i + 1, func->common.arg_info[i].pass_by_reference);
-			i++;
-		}
-		if (UNEXPECTED(func->common.fn_flags & ZEND_ACC_VARIADIC && func->common.arg_info[i].pass_by_reference)) {
-			uint32_t pass_by_reference = func->common.arg_info[i].pass_by_reference;
-			while (i < MAX_ARG_FLAG_NUM) {
-				ZEND_SET_ARG_FLAG(func, i + 1, pass_by_reference);
-				i++;
-			}
-		}
-	}
-}
-/* }}} */
-
 
 void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast) /* {{{ */
 {
@@ -4413,9 +4379,8 @@ void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast) /* {{{ */
 	if (return_type_ast) {
 		/* Use op_array->arg_info[-1] for return type hinting */
 		arg_infos = safe_emalloc(sizeof(zend_arg_info), list->children + 1, 0);
-		arg_infos->pass_by_reference = (op_array->fn_flags & ZEND_ACC_RETURN_REFERENCE) != 0;
 
-		zend_compile_return_type(return_type_ast, arg_infos, is_method);
+		zend_compile_return_type(return_type_ast, arg_infos, (op_array->fn_flags & ZEND_ACC_RETURN_REFERENCE) != 0);
 
 		arg_infos++;
 		op_array->fn_flags |= ZEND_ACC_HAS_RETURN_TYPE;
@@ -4512,7 +4477,7 @@ void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast) /* {{{ */
 							"with callable type hint can only be NULL");
 				}
 
-				zend_compile_callable_arg_info(type_ast, (zend_arg_callable_info *)arg_info, is_method);
+				zend_compile_callable_arg_info(type_ast, (zend_arg_callable_info *)arg_info);
 			} else {
 				zend_compile_typename(type_ast, arg_info);
 
@@ -4533,7 +4498,8 @@ void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast) /* {{{ */
 									"with a class type hint can only be NULL");
 						} else if (!ZEND_SAME_FAKE_TYPE(arg_info->type_hint, Z_TYPE(default_node.u.constant))) {
 							zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
-									"with a %s type hint can only be %s or NULL", ZSTR_VAL(arg_info->class_name), ZSTR_VAL(arg_info->class_name));
+									"with a %s type hint can only be %s or NULL",
+									zend_get_type_by_const(arg_info->type_hint), zend_get_type_by_const(arg_info->type_hint));
 						}
 					}
 				}
@@ -4561,21 +4527,10 @@ void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast) /* {{{ */
 					if (arg_info->class_name) {
 						zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
 							"with a class type hint can only be NULL");
-					} else switch (arg_info->type_hint) {
-						case IS_DOUBLE:
-							if (Z_TYPE(default_node.u.constant) != IS_DOUBLE && Z_TYPE(default_node.u.constant) != IS_LONG) {
-								zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
-									"with a float type hint can only be float, integer, or NULL");
-							}
-							break;
-							
-						default:
-							if (!ZEND_SAME_FAKE_TYPE(arg_info->type_hint, Z_TYPE(default_node.u.constant))) {
-								zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
-									"with a %s type hint can only be %s or NULL",
-									zend_get_type_by_const(arg_info->type_hint), zend_get_type_by_const(arg_info->type_hint));
-							}
-							break;
+					} else if (!ZEND_SAME_FAKE_TYPE(arg_info->type_hint, Z_TYPE(default_node.u.constant))) {
+						zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
+							"with a %s type hint can only be %s or NULL",
+							zend_get_type_by_const(arg_info->type_hint), zend_get_type_by_const(arg_info->type_hint));
 					}
 				}
 			}
@@ -4613,6 +4568,31 @@ void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast) /* {{{ */
 		op_array->num_args--;
 	}
 	zend_set_function_arg_flags((zend_function*)op_array);
+}
+/* }}} */
+
+ZEND_API void zend_set_function_arg_flags(zend_function *func) /* {{{ */
+{
+	uint32_t i, n;
+
+	func->common.arg_flags[0] = 0;
+	func->common.arg_flags[1] = 0;
+	func->common.arg_flags[2] = 0;
+	if (func->common.arg_info) {
+		n = MIN(func->common.num_args, MAX_ARG_FLAG_NUM);
+		i = 0;
+		while (i < n) {
+			ZEND_SET_ARG_FLAG(func, i + 1, func->common.arg_info[i].pass_by_reference);
+			i++;
+		}
+		if (UNEXPECTED(func->common.fn_flags & ZEND_ACC_VARIADIC && func->common.arg_info[i].pass_by_reference)) {
+			uint32_t pass_by_reference = func->common.arg_info[i].pass_by_reference;
+			while (i < MAX_ARG_FLAG_NUM) {
+				ZEND_SET_ARG_FLAG(func, i + 1, pass_by_reference);
+				i++;
+			}
+		}
+	}
 }
 /* }}} */
 

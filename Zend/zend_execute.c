@@ -841,7 +841,7 @@ static zend_always_inline zend_bool zend_callable_verify_arg_type(const zend_arg
 	return 1;
 }
 
-static zend_always_inline zend_bool zend_callable_verify_signature_function(const zend_arg_callable_info *arg_info, const zend_function *zf)
+static zend_bool zend_callable_verify_signature_function(const zend_arg_callable_info *arg_info, const zend_function *zf)
 {
 	if (EXPECTED(!(arg_info->arg_flags & (ZEND_CALLABLE_HAS_RETURN_TYPE | ZEND_CALLABLE_HAS_ARGS_DECLARED)))) {
 		return 1;
@@ -952,6 +952,7 @@ static zend_always_inline int zend_verify_arg_type(zend_function *zf, uint32_t a
 				zend_verify_arg_error(zf, arg_num, "be of the type ", zend_get_type_by_const(cur_arg_info->type_hint), zend_zval_type_name(arg), "", arg);
 				return 0;
 			}
+		}
 	} else if (cur_arg_info->type_hint) {
 		if (cur_arg_info->type_hint == IS_ARRAY) {
 			ZVAL_DEREF(arg);
@@ -965,7 +966,7 @@ static zend_always_inline int zend_verify_arg_type(zend_function *zf, uint32_t a
 			if (!zend_is_callable_ex(arg, NULL, IS_CALLABLE_CHECK_SILENT, NULL, &callable_fcc, NULL)
 				&& (Z_TYPE_P(arg) != IS_NULL || !(cur_arg_info->allow_null || (default_value && is_null_constant(default_value))))) {
 
-				zend_verify_arg_error(E_EXCEPTION | E_ERROR, zf, arg_num, "be callable", "", zend_zval_type_name(arg), "", arg);
+				zend_verify_arg_error(zf, arg_num, "be callable", "", zend_zval_type_name(arg), "", arg);
 				return 0;
 			} else if (Z_TYPE_P(arg) != IS_NULL && !zend_callable_verify_signature_function((zend_arg_callable_info *)cur_arg_info, callable_fcc.function_handler)) {
 				zend_verify_arg_error(zf, arg_num, "be callable of compliant signature", "", zend_zval_type_name(arg), "", arg);
