@@ -918,6 +918,7 @@ static void zend_ast_export_zval(smart_str *str, zval *zv, int priority, int ind
 	}
 }
 
+// TODO FIX THIS
 static void zend_ast_export_callable_type(smart_str *str, zend_ast *ast, int indent)
 {
 	smart_str_appends(str, "callable");

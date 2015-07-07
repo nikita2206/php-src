@@ -355,7 +355,7 @@ void destroy_op_array_arg_info(zend_arg_info *arg_info)
 			do {
 				destroy_op_array_arg_info(args);
 				args++;
-			} while (args->type_hint);
+			} while (args->type_hint || args->name);
 		}
 
 		efree(cb_arg_info->children - (cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE));

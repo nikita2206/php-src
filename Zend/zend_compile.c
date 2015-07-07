@@ -4296,12 +4296,10 @@ void zend_compile_return_type(zend_ast *type_ast, zend_arg_info *arg_info, zend_
 /* }}} */
 
 
-void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_info *cb_arg_info) /* {{{ */
+void zend_compile_callable_arg_info(zend_ast *ast, zend_arg_callable_info *cb_arg_info) /* {{{ */
 {
 	int has_return_type = ast->child[1] ? 1 : 0;
 	zend_ast_list *args_list = ast->child[0] ? zend_ast_get_list(ast->child[0]) : NULL;
-
-	ZEND_ASSERT(ast->kind == ZEND_AST_TYPE_CALLABLE);
 
 	cb_arg_info->type_hint = IS_CALLABLE;
 	cb_arg_info->arg_flags = 0;
@@ -4320,7 +4318,7 @@ void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_i
 	uint32_t nb_args = args_list ? args_list->children : 0;
 	uint32_t nb_arg_info = has_return_type + nb_args + (nb_args ? 1 : 0); /* add 1 for NULL-termination if there are any args */
 
-	/* -1 element is a return type (it exists even if there's no return type declared), the array is null-terminated (by name member) */
+	/* -1 element is a return type (it exists even if there's no return type declared), the array is null-terminated (by name ant type_hint members) */
 	cb_arg_info->children = (zend_arg_info *)safe_emalloc(sizeof(zend_arg_info), nb_arg_info, 0) + has_return_type;
 
 	if (nb_args) {
@@ -4333,20 +4331,25 @@ void zend_compile_callable_arg_info(zend_ast *ast, /* out */ zend_arg_callable_i
 	}
 
 	for (i = 0; i < nb_args; i++) {
-		zend_ast *type_ast = args_list->child[i];
+		zend_ast *param_ast = args_list->child[i];
+		zend_ast *type_ast  = param_ast->child[0];
 		zend_arg_info *arg_info = cb_arg_info->children + i;
 
-		/*if ((param_ast->attr & ZEND_PARAM_VARIADIC) != 0 && i + 1 != nb_args) {
+		if ((param_ast->attr & ZEND_PARAM_VARIADIC) != 0 && i + 1 != nb_args) {
 			zend_error_noreturn(E_COMPILE_ERROR, "Only the last parameter can be variadic");
-		} TODO */
+		}
 
-		arg_info->name = NULL;
-		arg_info->pass_by_reference = 0;
-		arg_info->is_variadic = 0;
+		arg_info->name = param_ast->child[1] ? zend_string_copy(zend_ast_get_str(param_ast->child[1])) : NULL;
+		arg_info->pass_by_reference = (param_ast->attr & ZEND_PARAM_REF) != 0;
+		arg_info->is_variadic = (param_ast->attr & ZEND_PARAM_VARIADIC) != 0;
 		arg_info->type_hint = 0;
-		arg_info->allow_null = 1;
+		arg_info->allow_null = param_ast->attr & ZEND_PARAM_OPTIONAL;
 		arg_info->class_name = NULL;
 		arg_info->children = NULL;
+
+		if (!type_ast) {
+			continue;
+		}
 
 		if (type_ast->kind == ZEND_AST_TYPE) {
 			arg_info->type_hint = type_ast->attr;
