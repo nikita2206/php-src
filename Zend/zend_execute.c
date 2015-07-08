@@ -799,7 +799,7 @@ static zend_always_inline zend_bool zend_callable_verify_signature_callable(cons
 		do {
 			if (!exp_args_ended) {
 				if (!zend_callable_verify_arg_type(cur_exp_arg_info_child, cur_arg_info_child)
-					|| !cur_arg_info_child->is_variadic && cur_exp_arg_info_child->is_variadic) {
+					|| cur_arg_info_child->is_variadic && !cur_exp_arg_info_child->is_variadic) {
 
 					return 0;
 				}
@@ -819,7 +819,7 @@ static zend_always_inline zend_bool zend_callable_verify_signature_callable(cons
 
 static zend_always_inline zend_bool zend_callable_verify_arg_type(const zend_arg_info *arg_info, const zend_arg_info *expected_arg_info)
 {
-	if (UNEXPECTED(arg_info->type_hint != expected_arg_info->type_hint)) {
+	if (UNEXPECTED(arg_info->type_hint != expected_arg_info->type_hint && arg_info->type_hint != 0)) {
 		return 0;
 	}
 
