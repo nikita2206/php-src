@@ -771,6 +771,9 @@ static zend_always_inline zend_bool zend_callable_verify_return_type(const zend_
 
 static zend_always_inline zend_bool zend_callable_verify_signature_callable(const zend_arg_callable_info *expected_arg_info, const zend_arg_callable_info *arg_info)
 {
+	zend_uintptr_t zero_args = ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS;
+	int optional_args = 0;
+
 	if (!(expected_arg_info->arg_flags & (ZEND_CALLABLE_HAS_RETURN_TYPE | ZEND_CALLABLE_HAS_ARGS_DECLARED))) {
 		return 1;
 	}
@@ -783,30 +786,28 @@ static zend_always_inline zend_bool zend_callable_verify_signature_callable(cons
 		return 0;
 	}
 
-	/* expected_arg_info expects zero args, but arg_info more than one */
-	zend_uintptr_t zero_args = ZEND_CALLABLE_HAS_ARGS_DECLARED | ZEND_CALLABLE_EXPECTS_ZERO_ARGS;
-	int optional_args = 0;
-
 	if ((expected_arg_info->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS) && (arg_info->arg_flags & zero_args) == ZEND_CALLABLE_HAS_ARGS_DECLARED) {
 		optional_args = 1;
 	}
 
+	// has expected args (>0) or (expects zero args and has given args (>0))
 	if ((expected_arg_info->arg_flags & zero_args) == ZEND_CALLABLE_HAS_ARGS_DECLARED || optional_args) {
-		const zend_arg_info *cur_exp_arg_info_child = expected_arg_info->children;
-		const zend_arg_info *cur_arg_info_child = arg_info->children;
+		const zend_arg_info *cur_arg_info_child = expected_arg_info->children;
+		const zend_arg_info *cur_exp_arg_info_child = arg_info->children;
 		int exp_args_ended = (expected_arg_info->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS) != 0;
 
 		do {
 			if (!exp_args_ended) {
-				if (!zend_callable_verify_arg_type(cur_exp_arg_info_child, cur_arg_info_child)
-					|| cur_arg_info_child->is_variadic && !cur_exp_arg_info_child->is_variadic) {
+				if (!zend_callable_verify_arg_type(cur_arg_info_child, cur_exp_arg_info_child)
+					|| cur_exp_arg_info_child->allow_null && !cur_arg_info_child->allow_null
+					|| cur_exp_arg_info_child->is_variadic && !cur_arg_info_child->is_variadic) {
 
 					return 0;
 				}
 
 				cur_exp_arg_info_child++;
 				exp_args_ended = !cur_exp_arg_info_child->type_hint && !cur_exp_arg_info_child->name;
-			} else if (!cur_arg_info_child->allow_null) {
+			} else if (!cur_arg_info_child->allow_null && !cur_arg_info_child->is_variadic) {
 				return 0;
 			}
 
@@ -823,9 +824,7 @@ static zend_always_inline zend_bool zend_callable_verify_arg_type(const zend_arg
 		return 0;
 	}
 
-	if (UNEXPECTED(arg_info->pass_by_reference != expected_arg_info->pass_by_reference
-		|| expected_arg_info->allow_null && !arg_info->allow_null)) {
-
+	if (UNEXPECTED(arg_info->pass_by_reference != expected_arg_info->pass_by_reference)) {
 		return 0;
 	}
 
@@ -870,22 +869,29 @@ static zend_bool zend_callable_verify_signature_function(const zend_arg_callable
 		zend_arg_info *cur_exp_arg_info = arg_info->children;
 		zend_arg_info *cur_arg_info = zf->common.arg_info;
 		uint32_t arg_num = 1;
+		uint32_t num_args = zf->common.num_args + ((zf->common.fn_flags & ZEND_ACC_VARIADIC) > 0);
 
 		do {
 			/* if implementor has lower expectations than we require it to have (omitted args) then it's compatible */
+			if (!cur_exp_arg_info->name && !cur_exp_arg_info->type_hint) {
+				return arg_num > zf->common.required_num_args;
+			}
 
-			if (!zend_callable_verify_arg_type(cur_arg_info, cur_exp_arg_info) || !cur_arg_info->is_variadic && cur_exp_arg_info->is_variadic) {
+			if (!zend_callable_verify_arg_type(cur_arg_info, cur_exp_arg_info) || cur_exp_arg_info->is_variadic && !cur_arg_info->is_variadic) {
+				return 0;
+			}
+
+			if (cur_exp_arg_info->allow_null && (!cur_arg_info->is_variadic || arg_num <= zf->common.required_num_args)) {
 				return 0;
 			}
 
 			cur_arg_info++;
 			cur_exp_arg_info++;
-		} while ((cur_arg_info->type_hint || cur_arg_info->class_name) && ++arg_num <= zf->common.num_args);
+		} while (++arg_num <= num_args);
 	}
 
 	return 1;
 }
-
 
 static void zend_generate_func_callable_str(zend_function *zf, smart_str *str);
 static void zend_generate_callable_arg(zend_arg_info *arg_info, smart_str *str);
@@ -975,17 +981,19 @@ static void zend_generate_func_callable_str(zend_function *zf, smart_str *str)
 
 	smart_str_appends(str, "callable");
 
-	if (zf->common.num_args) {
-		int i;
+	if (zf->common.num_args || (zf->common.fn_flags & ZEND_ACC_VARIADIC)) {
+		uint32_t i;
+		uint32_t num_args = zf->common.num_args + ((zf->common.fn_flags & ZEND_ACC_VARIADIC) > 0);
+		uint32_t required_num_args = zf->common.required_num_args + ((zf->common.fn_flags & ZEND_ACC_VARIADIC) > 0);
 		zend_arg_info *cur_arg = zf->common.arg_info;
 
 		smart_str_appendc(str, '(');
-		for (i = 0; i < zf->common.num_args; i++) {
+		for (i = 0; i < num_args; i++) {
 			if (i != 0) {
 				smart_str_appends(str, ", ");
 			}
 
-			if (i >= zf->common.required_num_args) {
+			if (i >= required_num_args) {
 				smart_str_appendc(str, '?');
 			}
 
