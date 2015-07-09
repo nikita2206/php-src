@@ -4507,36 +4507,6 @@ void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast) /* {{{ */
 					}
 				}
 			}
-			
-			if (type_ast->kind == ZEND_AST_TYPE) {
-				if (arg_info->type_hint == IS_ARRAY) {
-					if (default_ast && !has_null_default
-						&& Z_TYPE(default_node.u.constant) != IS_ARRAY
-						&& !Z_CONSTANT(default_node.u.constant)
-					) {
-						zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
-							"with array type hint can only be an array or NULL");
-					}
-				}
-			} else if (type_ast->kind == ZEND_AST_TYPE_CALLABLE) {
-				if (default_ast && !has_null_default && !Z_CONSTANT(default_node.u.constant)) {
-					zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
-						"with callable type hint can only be NULL");
-				}
-
-				zend_compile_callable_arg_info(type_ast, (zend_arg_callable_info *)arg_info, is_method);
-			} else {
-				if (default_ast && !has_null_default && !Z_CONSTANT(default_node.u.constant)) {
-					if (arg_info->class_name) {
-						zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
-							"with a class type hint can only be NULL");
-					} else if (!ZEND_SAME_FAKE_TYPE(arg_info->type_hint, Z_TYPE(default_node.u.constant))) {
-						zend_error_noreturn(E_COMPILE_ERROR, "Default value for parameters "
-							"with a %s type hint can only be %s or NULL",
-							zend_get_type_by_const(arg_info->type_hint), zend_get_type_by_const(arg_info->type_hint));
-					}
-				}
-			}
 
 			/* Allocate cache slot to speed-up run-time class resolution */
 			if (opline->opcode == ZEND_RECV_INIT) {

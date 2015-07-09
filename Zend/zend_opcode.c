@@ -351,14 +351,14 @@ void destroy_op_array_arg_info(zend_arg_info *arg_info)
 			destroy_op_array_arg_info(cb_arg_info->children - 1);
 		}
 
-		if ((cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && ! (cb_arg_info->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
+		if ((cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(cb_arg_info->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
 			do {
 				destroy_op_array_arg_info(args);
 				args++;
 			} while (args->type_hint || args->name);
 		}
 
-		efree(cb_arg_info->children - (cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE));
+		efree(cb_arg_info->children - (cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE ? 1 : 0));
 	}
 }
 
