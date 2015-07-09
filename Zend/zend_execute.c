@@ -43,7 +43,6 @@
 
 /* Virtual current working directory support */
 #include "zend_virtual_cwd.h"
-#include "zend_smart_str_public.h"
 
 #define _CONST_CODE  0
 #define _TMP_CODE    1
