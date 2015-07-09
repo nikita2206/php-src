@@ -743,7 +743,6 @@ static zend_always_inline zend_bool zend_callable_verify_return_type(const zend_
 static zend_always_inline zend_bool zend_callable_verify_signature_callable(const zend_arg_callable_info *arg_info, const zend_arg_callable_info *expected_arg_info);
 static zend_always_inline zend_bool zend_callable_verify_arg_type(const zend_arg_info *arg_info, const zend_arg_info *expected_arg_info);
 
-
 static zend_always_inline zend_bool zend_callable_verify_return_type(const zend_arg_info *return_type, const zend_arg_info *expected_return_type)
 {
 	if (return_type->type_hint != expected_return_type->type_hint) {
@@ -751,7 +750,7 @@ static zend_always_inline zend_bool zend_callable_verify_return_type(const zend_
 	}
 
 	if (return_type->type_hint == IS_CALLABLE) {
-		return zend_callable_verify_signature_callable((zend_arg_callable_info *)expected_return_type, (zend_arg_callable_info *)return_type);
+		return zend_callable_verify_signature_callable((zend_arg_callable_info *)return_type, (zend_arg_callable_info *)expected_return_type);
 	} else if (return_type->type_hint == IS_OBJECT && return_type->class_name && expected_return_type->class_name) {
 		if (!return_type->class_name || !expected_return_type->class_name) {
 			return 0;
@@ -979,7 +978,7 @@ static void zend_generate_func_callable_str(zend_function *zf, smart_str *str)
 		smart_str_appendc(str, '&');
 	}
 
-	smart_str_appends(str, "callable");
+	smart_str_appends(str, "callable(");
 
 	if (zf->common.num_args || (zf->common.fn_flags & ZEND_ACC_VARIADIC)) {
 		uint32_t i;
@@ -987,7 +986,6 @@ static void zend_generate_func_callable_str(zend_function *zf, smart_str *str)
 		uint32_t required_num_args = zf->common.required_num_args + ((zf->common.fn_flags & ZEND_ACC_VARIADIC) > 0);
 		zend_arg_info *cur_arg = zf->common.arg_info;
 
-		smart_str_appendc(str, '(');
 		for (i = 0; i < num_args; i++) {
 			if (i != 0) {
 				smart_str_appends(str, ", ");
@@ -999,8 +997,9 @@ static void zend_generate_func_callable_str(zend_function *zf, smart_str *str)
 
 			zend_generate_callable_arg(cur_arg++, str);
 		}
-		smart_str_appendc(str, ')');
 	}
+
+	smart_str_appendc(str, ')');
 
 	if (zf->common.fn_flags & ZEND_ACC_HAS_RETURN_TYPE) {
 		zend_generate_return_str(zf->common.arg_info - 1, str);
@@ -1273,7 +1272,17 @@ static zend_always_inline void zend_verify_return_type(zend_function *zf, zval *
 				if (!zend_is_callable_ex(ret, NULL, IS_CALLABLE_CHECK_SILENT, NULL, &callable_fcc, NULL) && (Z_TYPE_P(ret) != IS_NULL || !ret_info->allow_null)) {
 					zend_verify_return_error(zf, "be callable", "", zend_zval_type_name(ret), "");
 				} else if (Z_TYPE_P(ret) != IS_NULL && !zend_callable_verify_signature_function((zend_arg_callable_info *)ret_info, callable_fcc.function_handler)) {
-					zend_verify_return_error(zf, "be callable of compliant signature", "", "non-compliant callable", "");
+					smart_str given_msg = {0};
+					smart_str needed_msg = {0};
+
+					zend_generate_func_callable_str(callable_fcc.function_handler, &given_msg);
+					zend_generate_callable_str((zend_arg_callable_info *)ret_info, &needed_msg);
+
+					smart_str_0(&given_msg);
+					smart_str_0(&needed_msg);
+					zend_verify_return_error(zf, "be callable of compliant signature: ", needed_msg.s->val, given_msg.s->val, "");
+					zend_string_release(given_msg.s);
+					zend_string_release(needed_msg.s);
 				}
 			} else if (ret_info->class_name) {
 				if (EXPECTED(*cache_slot)) {
@@ -1307,7 +1316,15 @@ static zend_always_inline int zend_verify_missing_return_type(zend_function *zf,
 	zend_class_entry *ce;
 
 	if (ret_info->type_hint) {
-		if (ret_info->class_name) {
+		if (ret_info->type_hint == IS_CALLABLE) {
+			smart_str needed = {0};
+			smart_str_appends(&needed, "be ");
+			zend_generate_callable_str((zend_arg_callable_info *)ret_info, &needed);
+			smart_str_0(&needed);
+
+			zend_verify_return_error(zf, needed.s->val, "", "none", "");
+			zend_string_release(needed.s);
+		} else if (ret_info->class_name) {
 			if (EXPECTED(*cache_slot)) {
 				ce = (zend_class_entry*)*cache_slot;
 			} else {
@@ -1319,12 +1336,10 @@ static zend_always_inline int zend_verify_missing_return_type(zend_function *zf,
 				*cache_slot = (void*)ce;
 			}
 			need_msg =
-				(ce->ce_flags & ZEND_ACC_INTERFACE) ?
-				"implement interface " : "be an instance of ";
+					(ce->ce_flags & ZEND_ACC_INTERFACE) ?
+					"implement interface " : "be an instance of ";
 			zend_verify_return_error(zf, need_msg, ZSTR_VAL(ce->name), "none", "");
 			return 0;
-		} else if (ret_info->type_hint == IS_CALLABLE) {
-			zend_verify_return_error(zf, "be callable", "", "none", "");
 		} else {
 			zend_verify_return_error(zf, "be of the type ", zend_get_type_by_const(ret_info->type_hint), "none", "");
 		}
