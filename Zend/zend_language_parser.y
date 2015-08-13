@@ -252,7 +252,7 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %type <ast> assignment_list isset_variable type return_type non_empty_callable_arg_type_list callable_arg_type_list callable_arg_type
 %type <ast> identifier
 
-%type <num> returns_ref function is_reference is_variadic variable_modifiers nullable_callable_arg
+%type <num> returns_ref function is_reference is_variadic variable_modifiers
 %type <num> method_modifiers non_empty_member_modifiers member_modifier
 %type <num> class_modifiers class_modifier use_type
 
@@ -644,16 +644,11 @@ callable_arg_type_list:
 	|	'(' non_empty_callable_arg_type_list ')' { $$ = $2; }
 ;
 
-nullable_callable_arg:
-		/* empty */		{ $$ = 0; }
-	|	'?'				{ $$ = ZEND_PARAM_OPTIONAL; }
-;
-
 callable_arg_type:
-		nullable_callable_arg optional_type is_reference is_variadic T_VARIABLE
-			{ $$ = zend_ast_create_ex(ZEND_AST_PARAM, $3 | $4 | $1, $2, $5, NULL); }
-	|	nullable_callable_arg type
-			{ $$ = zend_ast_create_ex(ZEND_AST_PARAM, $1, $2, NULL, NULL); }
+		optional_type is_reference is_variadic T_VARIABLE
+			{ $$ = zend_ast_create_ex(ZEND_AST_PARAM, $2 | $3, $1, $4, NULL); }
+	|	type
+			{ $$ = zend_ast_create_ex(ZEND_AST_PARAM, 0, $1, NULL, NULL); }
 ;
 
 non_empty_callable_arg_type_list:

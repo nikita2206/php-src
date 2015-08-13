@@ -346,20 +346,19 @@ void destroy_op_array_arg_info(zend_arg_info *arg_info)
 
 	if (arg_info->type_hint == IS_CALLABLE && arg_info->children) {
 		zend_arg_callable_info *cb_arg_info = (zend_arg_callable_info *)arg_info;
-		zend_arg_info *args = cb_arg_info->children;
+		zend_arg_info_children *args = arg_info->children;
+		uint32_t num_args = arg_info->children->n_childs;
 
 		if (cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
-			destroy_op_array_arg_info(cb_arg_info->children - 1);
+			destroy_op_array_arg_info(&args->child[args->n_childs]);
 		}
 
-		if ((cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(cb_arg_info->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
-			do {
-				destroy_op_array_arg_info(args);
-				args++;
-			} while (args->type_hint || args->name);
+		while (num_args > 0) {
+			destroy_op_array_arg_info(&args->child[num_args - 1]);
+			num_args--;
 		}
 
-		efree(cb_arg_info->children - (cb_arg_info->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE ? 1 : 0));
+		efree(cb_arg_info->children);
 	}
 }
 

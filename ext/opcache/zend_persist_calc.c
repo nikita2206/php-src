@@ -161,32 +161,19 @@ static void zend_persist_arg_info_calc(zend_arg_info *arg)
 
 	if (arg->type_hint == IS_CALLABLE && arg->children) {
 		zend_arg_callable_info *callable_type = (zend_arg_callable_info *)arg;
-		zend_arg_info *children = callable_type->children;
-		uint32_t num_args = 0;
+		zend_arg_info_children *children = callable_type->children;
+		uint32_t num_arg_infos;
+		uint32_t i;
+
+		num_arg_infos = children->n_childs;
 
 		if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
-			children--;
-			num_args++;
-			//zend_persist_arg_info_calc(children);
+			num_arg_infos++;
 		}
 
-		if ((callable_type->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(callable_type->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
-			zend_arg_info *child = callable_type->children;
-			num_args++;
-			do {
-				//zend_persist_arg_info_calc(child);
-				num_args++;
-				child++;
-			} while (child->name || child->type_hint);
-		}
-
-		if (num_args) {
-			uint32_t i;
-
-			ADD_DUP_SIZE(children, sizeof(zend_arg_info) * num_args);
-			for (i = 0; i < num_args && (children[i].type_hint || children[i].name); i++) {
-				zend_persist_arg_info_calc(&children[i]);
-			}
+		ADD_DUP_SIZE(children, sizeof(zend_arg_info_children) - sizeof(zend_arg_info) + sizeof(zend_arg_info) * num_arg_infos);
+		for (i = 0; i < num_arg_infos; i++) {
+			zend_persist_arg_info_calc(&children->child[i]);
 		}
 	}
 }

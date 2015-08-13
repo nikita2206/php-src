@@ -934,9 +934,6 @@ static void zend_ast_export_callable_args_list(smart_str *str, zend_ast_list *li
 
 		ast = list->child[i];
 
-		if (ast->attr & ZEND_PARAM_OPTIONAL) {
-			smart_str_appendc(str, '?');
-		}
 		if (ast->child[0]) {
 			zend_ast_export_ns_name(str, ast->child[0], 0, indent);
 

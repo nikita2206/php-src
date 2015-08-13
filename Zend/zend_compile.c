@@ -4362,6 +4362,8 @@ static void zend_compile_typename(zend_ast *ast, zend_arg_info *arg_info) /* {{{
 }
 /* }}} */
 
+void zend_compile_callable_arg_info(zend_ast *ast, zend_arg_callable_info *cb_arg_info);
+
 void zend_compile_return_type(zend_ast *type_ast, zend_arg_info *arg_info, zend_uchar by_ref) /* {{{ */
 {
 	arg_info->name = NULL;
@@ -4382,7 +4384,7 @@ void zend_compile_return_type(zend_ast *type_ast, zend_arg_info *arg_info, zend_
 
 void zend_compile_callable_arg_info(zend_ast *ast, zend_arg_callable_info *cb_arg_info) /* {{{ */
 {
-	uint32_t i, nb_args, nb_arg_info;
+	uint32_t i, nb_args;
 	int has_return_type = ast->child[1] ? 1 : 0;
 	zend_ast_list *args_list = ast->child[0] ? zend_ast_get_list(ast->child[0]) : NULL;
 
@@ -4400,24 +4402,24 @@ void zend_compile_callable_arg_info(zend_ast *ast, zend_arg_callable_info *cb_ar
 	}
 
 	nb_args = args_list ? args_list->children : 0;
-	nb_arg_info = has_return_type + nb_args + (nb_args ? 1 : 0); /* add 1 for NULL-termination if there are any args */
 
-	cb_arg_info->children = (zend_arg_info *)safe_emalloc(sizeof(zend_arg_info), nb_arg_info, 0) + has_return_type;
+	cb_arg_info->children = (zend_arg_info_children *)safe_emalloc(
+		sizeof(zend_arg_info),
+		has_return_type + nb_args,
+		sizeof(zend_arg_info_children) - sizeof(zend_arg_info)
+	);
 
-	if (nb_args) {
-		/* mark end of arg list */
-		cb_arg_info->children[nb_args].type_hint = 0;
-		cb_arg_info->children[nb_args].name = NULL;
-	}
+	cb_arg_info->children->n_childs = nb_args;
 
 	if (has_return_type) {
-		zend_compile_return_type(ast->child[1], &cb_arg_info->children[-1], 0);
+		/* the last element is a return type */
+		zend_compile_return_type(ast->child[1], &cb_arg_info->children->child[nb_args], 0);
 	}
 
 	for (i = 0; i < nb_args; i++) {
 		zend_ast *param_ast = args_list->child[i];
 		zend_ast *type_ast  = param_ast->child[0];
-		zend_arg_info *arg_info = &cb_arg_info->children[i];
+		zend_arg_info *arg_info = &cb_arg_info->children->child[i];
 
 		if ((param_ast->attr & ZEND_PARAM_VARIADIC) != 0 && i + 1 != nb_args) {
 			zend_error_noreturn(E_COMPILE_ERROR, "Only the last parameter can be variadic");
@@ -4427,7 +4429,7 @@ void zend_compile_callable_arg_info(zend_ast *ast, zend_arg_callable_info *cb_ar
 		arg_info->pass_by_reference = (param_ast->attr & ZEND_PARAM_REF) != 0;
 		arg_info->is_variadic = (param_ast->attr & ZEND_PARAM_VARIADIC) != 0;
 		arg_info->type_hint = 0;
-		arg_info->allow_null = param_ast->attr & ZEND_PARAM_OPTIONAL;
+		arg_info->allow_null = 0;
 		arg_info->class_name = NULL;
 		arg_info->children = NULL;
 

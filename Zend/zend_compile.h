@@ -303,34 +303,49 @@ typedef struct _zend_property_info {
 typedef struct _zend_internal_arg_info {
 	const char *name;
 	const char *class_name;
-	struct _zend_internal_arg_info *children;
+	struct _zend_internal_arg_info_children *children;
 	zend_uchar type_hint;
 	zend_uchar pass_by_reference;
 	zend_bool allow_null;
 	zend_bool is_variadic;
 } zend_internal_arg_info;
 
+/* arg_info children for internal functions (can be used for callable args or generic types) */
+typedef struct _zend_internal_arg_info_children {
+	uint32_t n_childs;
+	zend_internal_arg_info child[1];
+} zend_internal_arg_info_children;
+
 /* arg_info for user functions */
 typedef struct _zend_arg_info {
 	zend_string *name;
 	zend_string *class_name;
-	struct _zend_arg_info *children;
+	struct _zend_arg_info_children *children;
 	zend_uchar type_hint;
 	zend_uchar pass_by_reference;
 	zend_bool allow_null;
 	zend_bool is_variadic;
 } zend_arg_info;
 
-/* arg_info for callable type hints in user functions */
+/* arg_info for callable type hints in user functions,
+ * just like zend_internal_function_info it redefines some fields
+ * but has the same layout. children->child[children->num_args] element
+ * is a return type if it's set.
+ */
 typedef struct _zend_arg_callable_info {
 	zend_string *name;
 	zend_uintptr_t arg_flags;
-	zend_arg_info *children;
+	struct _zend_arg_info_children *children;
 	zend_uchar type_hint;
 	zend_uchar pass_by_reference;
 	zend_bool allow_null;
 	zend_bool is_variadic;
 } zend_arg_callable_info;
+
+typedef struct _zend_arg_info_children {
+	uint32_t n_childs;
+	zend_arg_info child[1];
+} zend_arg_info_children;
 
 /* the following structure repeats the layout of zend_internal_arg_info,
  * but its fields have different meaning. It's used as the first element of
@@ -340,7 +355,7 @@ typedef struct _zend_arg_callable_info {
 typedef struct _zend_internal_function_info {
 	zend_uintptr_t required_num_args;
 	const char *class_name;
-	zend_internal_arg_info *children;
+	zend_uintptr_t _children; /* unused */
 	zend_uchar type_hint;
 	zend_bool return_reference;
 	zend_bool allow_null;
@@ -832,7 +847,6 @@ ZEND_API void zend_assert_valid_class_name(const zend_string *const_name);
 
 #define ZEND_PARAM_REF      (1<<0)
 #define ZEND_PARAM_VARIADIC (1<<1)
-#define ZEND_PARAM_OPTIONAL	(1<<2)
 
 #define ZEND_NAME_FQ       0
 #define ZEND_NAME_NOT_FQ   1

@@ -349,23 +349,21 @@ static void zend_file_cache_serialize_arg_info(zend_arg_info *arg)
 	}
 
 	if (arg->type_hint == IS_CALLABLE && arg->children && !IS_SERIALIZED(arg->children)) {
-		zend_arg_callable_info *callable_type;
-		zend_arg_info *child;
+		zend_arg_callable_info *callable_type = (zend_arg_callable_info *)arg;
+		zend_arg_info_children *children;
+		uint32_t num_args;
 
-		callable_type = (zend_arg_callable_info *)arg;
 		SERIALIZE_PTR(callable_type->children);
-		child = callable_type->children;
+		children = callable_type->children;
 		UNSERIALIZE_PTR(callable_type->children);
 
 		if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
-			zend_file_cache_serialize_arg_info(child - 1);
+			zend_file_cache_serialize_arg_info(children->child[children->n_childs]);
 		}
 
-		if ((callable_type->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(callable_type->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
-			do {
-				zend_file_cache_serialize_arg_info(child);
-				child++;
-			} while (child->name || child->type_hint);
+		num_args = children->n_childs;
+		while (num_args > 0) {
+			zend_file_cache_serialize_arg_info(&children->child[num_args - 1]);
 		}
 	}
 }
@@ -1044,24 +1042,21 @@ static void zend_file_cache_unserialize_arg_info(zend_arg_info *arg)
 		UNSERIALIZE_STR(arg->class_name);
 	}
 
-
 	if (arg->type_hint == IS_CALLABLE && arg->children && !IS_UNSERIALIZED(arg->children)) {
-		zend_arg_callable_info *callable_type;
-		zend_arg_info *child;
+		zend_arg_callable_info *callable_type = (zend_arg_callable_info *)arg;
+		zend_arg_info_children *children;
+		uint32_t num_args;
 
-		callable_type = (zend_arg_callable_info *)arg;
 		UNSERIALIZE_PTR(callable_type->children);
-		child = callable_type->children;
+		children = callable_type->children;
 
 		if (callable_type->arg_flags & ZEND_CALLABLE_HAS_RETURN_TYPE) {
-			zend_file_cache_unserialize_arg_info(child - 1);
+			zend_file_cache_unserialize_arg_info(&children->child[children->n_childs]);
 		}
 
-		if ((callable_type->arg_flags & ZEND_CALLABLE_HAS_ARGS_DECLARED) && !(callable_type->arg_flags & ZEND_CALLABLE_EXPECTS_ZERO_ARGS)) {
-			do {
-				zend_file_cache_unserialize_arg_info(child);
-				child++;
-			} while (child->name || child->type_hint);
+		num_args = children->n_childs;
+		while (num_args > 0) {
+			zend_file_cache_unserialize_arg_info(&children->child[num_args - 1]);
 		}
 	}
 }
